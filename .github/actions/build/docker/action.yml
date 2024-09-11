@@ -26,9 +26,11 @@ runs:
     - name: Setup Ko
       uses: ko-build/setup-ko@v0.6
     - name: Login to harbor
+      shell: bash
       run: |
         ko login harbor.maersk.io -u ${{ inputs.cr_username }} -p ${{ inputs.cr_access_token }}
     - name: Build and Push Dev Image
+      shell: bash
       run: |
         export KO_DOCKER_REPO=harbor.maersk.io/mop/osctrl-${{ inputs.osctrl_component }}
         ko build ./${{ inputs.osctrl_component }} -t ${{ inputs.build_id }} --bare --platform=linux/amd64,linux/arm64

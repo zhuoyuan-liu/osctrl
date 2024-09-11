@@ -19,10 +19,10 @@ runs:
   using: "composite"
   steps:
     # ########################### Checkout code ###########################
-    # - name: Checkout code
-    #   uses: actions/checkout@v4
-    #   with:
-    #     fetch-depth: 2
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
     - name: Setup Ko
       uses: ko-build/setup-ko@v0.6
     - name: Login to harbor

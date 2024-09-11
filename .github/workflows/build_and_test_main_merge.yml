@@ -9,6 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Test, Build, Publish
     environment: dev
+    strategy:
+      matrix:
+        components: [tls, admin, api, cli]
     outputs:
       dev-tag: ${{ steps.prep.outputs.BUILD_ID }}
     steps:
@@ -37,12 +40,10 @@ jobs:
           secrets: |
             telemetry-kv/data/readable/harbor/mop-write-user PASSWORD;
             telemetry-kv/data/readable/harbor/mop-write-user USERNAME;
-      - name: Setup Ko
-        uses: ko-build/setup-ko@v0.6
-      - name: Login to harbor
-        run: |
-          ko login harbor.maersk.io -u ${{ steps.secrets.outputs.USERNAME }} -p ${{ steps.secrets.outputs.PASSWORD }}
-      - name: Build and Push Dev Image
-        run: |
-          export KO_DOCKER_REPO=harbor.maersk.io/mop/osctrl-tls
-          ko build ./tls -t ${{ steps.prep.outputs.BUILD_ID }} --bare --platform=linux/amd64,linux/arm64
+      - name: Build docker image
+        uses: ./.github/actions/build/docker
+        with:
+          osctrl_component: ${{ matrix.components }}
+          build_id: ${{ steps.prep.outputs.BUILD_ID }}
+          cr_username: ${{ steps.secrets.outputs.USERNAME }}
+          cr_access_token: ${{ steps.secrets.outputs.PASSWORD }}

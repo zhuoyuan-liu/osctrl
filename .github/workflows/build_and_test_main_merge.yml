@@ -47,3 +47,5 @@ jobs:
           build_id: ${{ steps.prep.outputs.BUILD_ID }}
           cr_username: ${{ steps.secrets.outputs.USERNAME }}
           cr_access_token: ${{ steps.secrets.outputs.PASSWORD }}
+          cr_name: harbor.maersk.io
+          cr_repo: mop

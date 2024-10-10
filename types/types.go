@@ -1,14 +1,18 @@
 package types
 
+import "time"
+
 // JSONConfigurationTLS to hold TLS service configuration values
 type JSONConfigurationTLS struct {
-	Listener    string `json:"listener"`
-	Port        string `json:"port"`
-	MetricsPort string `json:"metricsPort"`
-	Host        string `json:"host"`
-	Auth        string `json:"auth"`
-	Logger      string `json:"logger"`
-	Carver      string `json:"carver"`
+	Listener        string `json:"listener"`
+	Port            string `json:"port"`
+	MetricsListener string `json:"metricsListener"`
+	MetricsPort     string `json:"metricsPort"`
+	MetricsEnabled  bool   `json:"metricsEnabled"`
+	Host            string `json:"host"`
+	Auth            string `json:"auth"`
+	Logger          string `json:"logger"`
+	Carver          string `json:"carver"`
 }
 
 // JSONConfigurationAdmin to hold admin service configuration values
@@ -58,6 +62,20 @@ type S3Configuration struct {
 	Region          string `json:"region"`
 	AccessKey       string `json:"accessKey"`
 	SecretAccessKey string `json:"secretAccesKey"`
+}
+
+type KafkaSASLConfigurations struct {
+	Mechanism string `json:"mechanism"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+}
+
+type KafkaConfiguration struct {
+	BoostrapServer    string                  `json:"bootstrap_servers"`
+	SSLCALocation     string                  `json:"ssl_ca_location"`
+	ConnectionTimeout time.Duration           `json:"connection_timeout"`
+	SASL              KafkaSASLConfigurations `json:"sasl"`
+	Topic             string                  `json:"topic"`
 }
 
 // OsqueryTable to show tables to query

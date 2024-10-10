@@ -2,7 +2,12 @@ name: test-build-publish
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
+env:
+  GOLANG_VERSION: 1.23.0
+  OSQUERY_VERSION: 5.13.1
 
 jobs:
   test:

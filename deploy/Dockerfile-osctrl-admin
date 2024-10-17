@@ -1,0 +1,40 @@
+FROM golang:1.23-alpine3.19 AS builder
+
+ARG COMPONENT=admin
+ARG GOOS=linux
+ARG GOARCH=amd64
+
+WORKDIR /app
+COPY . .
+RUN go mod download
+RUN go mod verify
+RUN go build -o /app/osctrl-${COMPONENT}-${GOOS}-${GOARCH}.bin ${COMPONENT}/*.go
+
+
+FROM ubuntu:22.04
+
+# Install software
+RUN apt-get update -y -q && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install/Setup osctrl
+RUN useradd -ms /usr/sbin/nologin osctrl-${COMPONENT}
+RUN mkdir -p /opt/osctrl/bin && \
+    mkdir -p /opt/osctrl/config && \
+    mkdir -p /opt/osctrl/script && \
+    mkdir -p /opt/osctrl/tmpl_admin/components && \
+    mkdir -p /opt/osctrl/static && \
+    mkdir -p /opt/osctrl/data && \
+    chown osctrl-${COMPONENT}:osctrl-${COMPONENT} -R /opt/osctrl
+COPY --from=builder /app/osctrl-${COMPONENT}-${GOOS}-${GOARCH}.bin /opt/osctrl/bin/osctrl-${COMPONENT}
+RUN chmod 755 /opt/osctrl/bin/osctrl-${COMPONENT}
+
+### Copy osctrl-admin web templates ###
+USER osctrl-${COMPONENT}
+COPY admin/templates/ /opt/osctrl/tmpl_admin
+COPY admin/static/ /opt/osctrl/static
+COPY deploy/osquery/data/*.json /opt/osctrl/data/
+
+WORKDIR /opt/osctrl
+
+CMD ["/opt/osctrl/bin/osctrl-admin"]

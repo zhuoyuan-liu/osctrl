@@ -14,6 +14,10 @@ RUN go build -o /app/osctrl-${COMPONENT}-${GOOS}-${GOARCH}.bin ${COMPONENT}/*.go
 
 FROM ubuntu:22.04
 
+ARG COMPONENT=admin
+ARG GOOS=linux
+ARG GOARCH=amd64
+
 # Install software
 RUN apt-get update -y -q && \
     rm -rf /var/lib/apt/lists/*

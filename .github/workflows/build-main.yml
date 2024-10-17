@@ -26,7 +26,7 @@ jobs:
   build:
     needs: build-prep
     runs-on: ubuntu-latest
-    name: Test, Build, Publish
+    name: Build docker images
     environment: dev
     strategy:
       matrix:
@@ -52,7 +52,7 @@ jobs:
             telemetry-kv/data/readable/harbor/mop-write-user PASSWORD;
             telemetry-kv/data/readable/harbor/mop-write-user USERNAME;
       - name: Build docker image
-        uses: ./.github/actions/build/docker
+        uses: ./.github/actions/build/docker/ko-build.yml
         with:
           osctrl_component: ${{ matrix.components }}
           build_id: ${{needs.build-prep.outputs.dev-tag}}

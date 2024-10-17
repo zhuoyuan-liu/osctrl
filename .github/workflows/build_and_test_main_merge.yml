@@ -163,7 +163,7 @@ jobs:
         - name: login to CR
           shell: bash
           run: |
-            docker login -u ${{ steps.secrets.outputs.USERNAME }} -p ${{ steps.secrets.outputs.PASSWORD }} harbor.maersk.io
+            echo ${{ steps.secrets.outputs.PASSWORD }} | docker login -u ${{ steps.secrets.outputs.USERNAME }} --password-stdin harbor.maersk.io
 
         ########################### Create and push images ###########################
         - name: Create manifest list and push

@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        components: ['tls', 'admin', 'api', 'cli']
-        goos: ['linux', 'darwin', 'windows']
+        components: ['admin']
+        goos: ['linux']
         goarch: ['amd64', 'arm64']
     steps:
       ########################### Checkout code ###########################
@@ -61,47 +61,12 @@ jobs:
       #     commit_branch: "${{ steps.vars.outputs.branch }}"
       #     golang_version: "${{ env.GOLANG_VERSION }}"
 
-  create_deb_packages:
-    strategy:
-      matrix:
-        components: ['tls', 'admin', 'api', 'cli']
-        goos: ['linux']
-        goarch: ['amd64']
-    needs: [build_and_test]
-    runs-on: ubuntu-22.04
-    steps:
-      ########################### Checkout code ###########################
-      - name: Checkout code
-        uses: actions/checkout@v4.1.1
-        with:
-          fetch-depth: 2
-
-      ########################### Generate SHA1 commit hash ###########################
-      # https://newbedev.com/getting-current-branch-and-commit-hash-in-github-action
-      - name: Declare GIT hash and branch
-        id: vars
-        shell: bash
-        run: |
-          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
-          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      ########################### Build DEB packages ###########################
-      - name: Build osctrl DEB packages
-        uses: ./.github/actions/build/dpkg
-        with:
-          go_os: ${{ matrix.goos }}
-          go_arch: ${{ matrix.goarch }}
-          osctrl_component: ${{ matrix.components }}
-          commit_sha: ${{ steps.vars.outputs.sha_short }}
-          osquery_version: ${{ env.OSQUERY_VERSION }}
-
   create_docker_images:
     needs: [build_and_test]
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        components: ['tls', 'admin', 'api', 'cli']
+        components: ['admin']
         goos: ['linux']
         goarch: ['amd64', 'arm64']
     steps:
@@ -142,7 +107,7 @@ jobs:
       runs-on: ubuntu-22.04
       strategy:
         matrix:
-          components: ['tls', 'admin', 'api', 'cli']
+          components: ['admin']
       steps:
         ########################### Get digests from build ###########################
         - name: Download digests

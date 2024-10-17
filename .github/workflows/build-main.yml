@@ -52,7 +52,7 @@ jobs:
             telemetry-kv/data/readable/harbor/mop-write-user PASSWORD;
             telemetry-kv/data/readable/harbor/mop-write-user USERNAME;
       - name: Build docker image
-        uses: ./.github/actions/build/docker/ko-build.yml
+        uses: ./.github/actions/build/ko-build
         with:
           osctrl_component: ${{ matrix.components }}
           build_id: ${{needs.build-prep.outputs.dev-tag}}

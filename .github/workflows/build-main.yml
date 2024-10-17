@@ -8,6 +8,7 @@ on:
 env:
   GOLANG_VERSION: 1.23.0
   OSQUERY_VERSION: 5.13.1
+  OSCTRL_ADMIN_IMAGE: harbor.maersk.io/mop/osctrl-admin
 
 jobs:
   build-prep:
@@ -60,3 +61,126 @@ jobs:
           cr_access_token: ${{ steps.secrets.outputs.PASSWORD }}
           cr_name: harbor.maersk.io
           cr_repo: mop
+  build-osctrl-admin:
+    needs: build-prep
+    runs-on: ubuntu-latest
+    name: Build osctrl admin docker images
+    environment: dev
+    strategy:
+      matrix:
+        go_arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          platform=linux/${{ matrix.go_arch }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV     
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Build osctrl admin binary
+        run: |
+          GOARCH=${{ matrix.go_arch }} \
+          go build -o osctrl-admin-linux-${{ matrix.go_arch }}.bin \
+          ./admin
+        shell: bash
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.OSCTRL_ADMIN_IMAGE }}
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Import secrets
+        uses: hashicorp/vault-action@v2.8.0
+        id: secrets
+        with:
+          url: https://vault.maersk-digital.net
+          tlsSkipVerify: false
+          exportEnv: false
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          secrets: |
+            telemetry-kv/data/readable/harbor/mop-write-user PASSWORD;
+            telemetry-kv/data/readable/harbor/mop-write-user USERNAME;
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: harbor.maersk.io
+          username: ${{ steps.secrets.outputs.USERNAME }}
+          password: ${{ steps.secrets.outputs.PASSWORD }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ inputs.platform }}
+          outputs: type=image,name=${{ env.OSCTRL_ADMIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - name: Upload digest
+        uses: actions/upload-artifact@v4.4.0
+        with:
+          name: digests-${{ steps.prep.outputs.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+  merge:
+    runs-on: ubuntu-latest
+    needs:
+      - build-osctrl-admin
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.OSCTRL_ADMIN_IMAGE }}
+      
+      - name: Import secrets
+        uses: hashicorp/vault-action@v2.8.0
+        id: secrets
+        with:
+          url: https://vault.maersk-digital.net
+          tlsSkipVerify: false
+          exportEnv: false
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          secrets: |
+            telemetry-kv/data/readable/harbor/mop-write-user PASSWORD;
+            telemetry-kv/data/readable/harbor/mop-write-user USERNAME;
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: harbor.maersk.io
+          username: ${{ steps.secrets.outputs.USERNAME }}
+          password: ${{ steps.secrets.outputs.PASSWORD }}
+      
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.OSCTRL_ADMIN_IMAGE }}@sha256:%s ' *)          
+      
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.OSCTRL_ADMIN_IMAGE }}:${{ steps.meta.outputs.version }}  

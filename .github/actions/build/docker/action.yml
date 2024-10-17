@@ -13,6 +13,9 @@ inputs:
   commit_sha:
     required: true
     description: Define the SHA1 git commit hash
+  container_registry:
+    required: true
+    description: Define the container registry to push the image to
   docker_hub_org:
     required: true
     description: Pass DockerHub org to action
@@ -56,7 +59,7 @@ runs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: harbor.maersk.io/mop/osctrl-${{ inputs.osctrl_component }}
+        images: ${{ inputs.container_registry }}/${{ inputs.docker_hub_org }}/osctrl-${{ inputs.osctrl_component }}
         labels: |
           org.opencontainers.image.title=osctrl-${{ inputs.osctrl_component }}
         tags: |
@@ -64,10 +67,10 @@ runs:
             type=match,pattern=v(.*),group=1
 
     ########################### Log into Dockerhub ###########################
-    - name: Login to Maersk Harbor
+    - name: Login to Container Registry
       uses: docker/login-action@v3.0.0
       with:
-        registry: harbor.maersk.io
+        registry: ${{ inputs.container_registry }}
         username: ${{ inputs.docker_hub_username }}
         password: ${{ inputs.docker_hub_access_token }}
     # ########################### Setup QEMU ###########################
@@ -88,7 +91,7 @@ runs:
         push: true
         labels: ${{ steps.meta.outputs.labels }}
         platforms: "${{ inputs.go_os }}/${{ inputs.go_arch  }}"
-        outputs: type=image,name=harbor.maersk.io/mop/osctrl-${{ inputs.osctrl_component }},push-by-digest=true,name-canonical=true,push=true
+        outputs: type=image,name=${{ inputs.container_registry }}/mop/osctrl-${{ inputs.osctrl_component }},push-by-digest=true,name-canonical=true,push=true
         build-args: |
           COMPONENT=${{ inputs.osctrl_component }}
           GOOS=${{ inputs.go_os }}

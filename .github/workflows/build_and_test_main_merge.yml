@@ -8,7 +8,7 @@ on:
 env:
   GOLANG_VERSION: 1.23.0
   OSQUERY_VERSION: 5.13.1
-  OSCTRL_ADMIN_IMAGE: harbor.maersk.io/mop/osctrl-admin
+  OSCTRL_ADMIN_IMAGE: ${{ secrets.CONTAINER_REGISTRY }}/${{ secrets.DOCKER_HUB_ORG }}/osctrl-admin
 
 jobs:
   build-prep:
@@ -59,8 +59,8 @@ jobs:
           build_id: ${{needs.build-prep.outputs.dev-tag}}
           cr_username: ${{ steps.secrets.outputs.USERNAME }}
           cr_access_token: ${{ steps.secrets.outputs.PASSWORD }}
-          cr_name: harbor.maersk.io
-          cr_repo: mop
+          cr_name: ${{ secrets.CONTAINER_REGISTRY }}
+          cr_repo: ${{ secrets.DOCKER_HUB_ORG }}
   build_and_test:
     name: Build binaries for osctrl admin
     runs-on: ubuntu-22.04
@@ -166,7 +166,7 @@ jobs:
           docker_hub_org: ${{ secrets.DOCKER_HUB_ORG }}
           docker_hub_username: ${{ steps.secrets.outputs.USERNAME }}
           docker_hub_access_token: ${{ steps.secrets.outputs.PASSWORD }}
-          container_registry: harbor.maersk.io
+          container_registry: ${{ secrets.CONTAINER_REGISTRY }}
 
 
   push_docker_images:
@@ -217,7 +217,7 @@ jobs:
         - name: login to CR
           shell: bash
           run: |
-            echo ${{ steps.secrets.outputs.PASSWORD }} | docker login -u ${{ steps.secrets.outputs.USERNAME }} --password-stdin harbor.maersk.io
+            echo ${{ steps.secrets.outputs.PASSWORD }} | docker login -u ${{ steps.secrets.outputs.USERNAME }} --password-stdin {{ secrets.CONTAINER_REGISTRY }}
 
         ########################### Create and push images ###########################
         - name: Create manifest list and push

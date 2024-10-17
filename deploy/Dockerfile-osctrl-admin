@@ -1,4 +1,5 @@
-FROM golang:1.23-alpine3.19 AS builder
+ARG GOVERSION=1.23
+FROM golang:${GOVERSION}-alpine3.19 AS builder
 
 ARG COMPONENT=admin
 ARG GOOS=linux

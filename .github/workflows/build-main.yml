@@ -123,12 +123,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./deploy/cicd/docker/Dockerfile-osctrl-admin
+          file: ./deploy/Dockerfile-osctrl-admin
           platforms: linux/${{ matrix.go_arch }}
           build-args: |
             COMPONENT=admin
             GOARCH=${{ matrix.go_arch }}
             GOOS=linux
+            GOVERSION=${{ env.GOLANG_VERSION }}
           outputs: type=image,name=${{ env.OSCTRL_ADMIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |

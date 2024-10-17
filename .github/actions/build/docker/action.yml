@@ -64,11 +64,12 @@ runs:
             type=match,pattern=v(.*),group=1
 
     ########################### Log into Dockerhub ###########################
-    - name: login to CR
-      shell: bash
-      run: |
-        echo ${{ steps.secrets.outputs.PASSWORD }} | docker login -u ${{ steps.secrets.outputs.USERNAME }} --password-stdin harbor.maersk.io
-
+    - name: Login to Maersk Harbor
+      uses: docker/login-action@v3.0.0
+      with:
+        registry: harbor.maersk.io
+        username: ${{ inputs.docker_hub_username }}
+        password: ${{ inputs.docker_hub_access_token }}
     # ########################### Setup QEMU ###########################
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3

@@ -26,7 +26,7 @@ jobs:
           echo "BUILD_ID=dev-${sha}-${ts}" >> $GITHUB_OUTPUT
   build:
     needs: build-prep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     name: Build docker images
     environment: dev
     strategy:
@@ -63,7 +63,7 @@ jobs:
           cr_repo: mop
   build-osctrl-admin:
     needs: build-prep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     name: Build osctrl admin docker images
     environment: dev
     strategy:
@@ -144,7 +144,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
   merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - build-prep
       - build-osctrl-admin

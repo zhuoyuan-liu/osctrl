@@ -85,6 +85,9 @@ jobs:
           GOARCH=${{ matrix.go_arch }} \
           go build -o osctrl-admin-linux-${{ matrix.go_arch }}.bin \
           ./admin
+          pwd
+          ls -l
+          
         shell: bash
       - name: Docker meta
         id: meta

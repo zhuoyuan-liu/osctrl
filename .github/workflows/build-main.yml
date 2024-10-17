@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - test-action
 
 env:
   GOLANG_VERSION: 1.23.0

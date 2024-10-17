@@ -120,7 +120,12 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          platforms: ${{ inputs.platform }}
+          file: ./deploy/cicd/docker/Dockerfile-osctrl-admin
+          platforms: linux/{{ matrix.go_arch }}
+          build-args: |
+            COMPONENT=admin
+            GOARCH=${{ matrix.go_arch }}
+            GOOS=linux
           outputs: type=image,name=${{ env.OSCTRL_ADMIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |
@@ -137,6 +142,7 @@ jobs:
   merge:
     runs-on: ubuntu-latest
     needs:
+      - build-prep
       - build-osctrl-admin
     steps:
       - name: Download digests
@@ -154,6 +160,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.OSCTRL_ADMIN_IMAGE }}
+          tags: type=raw,value=${{needs.build-prep.outputs.dev-tag}}
       
       - name: Import secrets
         uses: hashicorp/vault-action@v2.8.0
@@ -180,7 +187,6 @@ jobs:
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.OSCTRL_ADMIN_IMAGE }}@sha256:%s ' *)          
-      
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.OSCTRL_ADMIN_IMAGE }}:${{ steps.meta.outputs.version }}  
+          docker buildx imagetools inspect ${{ env.OSCTRL_ADMIN_IMAGE }}:${{needs.build-prep.outputs.dev-tag}}

@@ -73,6 +73,8 @@ jobs:
       - name: Checkout
         id: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - name: Prepare
         run: |
           platform=linux/${{ matrix.go_arch }}
@@ -85,9 +87,6 @@ jobs:
           GOARCH=${{ matrix.go_arch }} \
           go build -o osctrl-admin-linux-${{ matrix.go_arch }}.bin \
           ./admin
-          pwd
-          ls -l
-          
         shell: bash
       - name: Docker meta
         id: meta
@@ -123,6 +122,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
+          context: .
           file: ./deploy/cicd/docker/Dockerfile-osctrl-admin
           platforms: linux/${{ matrix.go_arch }}
           build-args: |

@@ -10,15 +10,27 @@ env:
   OSQUERY_VERSION: 5.13.1
 
 jobs:
-  test:
+  build-prep:
+    runs-on: ubuntu-latest
+    name: Prepare for building images
+    environment: dev
+    outputs:
+      dev-tag: ${{ steps.prep.outputs.BUILD_ID }}
+    steps:
+      - name: Generate build ID
+        id: prep
+        run: |
+          sha=${GITHUB_SHA::8}
+          ts=$(date +%s)
+          echo "BUILD_ID=dev-${sha}-${ts}" >> $GITHUB_OUTPUT
+  build:
+    needs: build-prep
     runs-on: ubuntu-latest
     name: Test, Build, Publish
     environment: dev
     strategy:
       matrix:
-        components: [tls, admin, api, cli]
-    outputs:
-      dev-tag: ${{ steps.prep.outputs.BUILD_ID }}
+        components: [tls, api, cli]
     steps:
       - name: Checkout
         id: checkout
@@ -26,12 +38,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
-      - name: Generate build ID
-        id: prep
-        run: |
-          sha=${GITHUB_SHA::8}
-          ts=$(date +%s)
-          echo "BUILD_ID=dev-${sha}-${ts}" >> $GITHUB_OUTPUT
       - name: Import secrets
         uses: hashicorp/vault-action@v2.8.0
         id: secrets
@@ -49,7 +55,7 @@ jobs:
         uses: ./.github/actions/build/docker
         with:
           osctrl_component: ${{ matrix.components }}
-          build_id: ${{ steps.prep.outputs.BUILD_ID }}
+          build_id: ${{needs.build-prep.outputs.dev-tag}}
           cr_username: ${{ steps.secrets.outputs.USERNAME }}
           cr_access_token: ${{ steps.secrets.outputs.PASSWORD }}
           cr_name: harbor.maersk.io

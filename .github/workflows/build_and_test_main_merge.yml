@@ -8,8 +8,22 @@ on:
 env:
   GOLANG_VERSION: 1.23.0
   OSQUERY_VERSION: 5.13.1
+  OSCTRL_ADMIN_IMAGE: harbor.maersk.io/mop/osctrl-admin
 
 jobs:
+  build-prep:
+    runs-on: ubuntu-latest
+    name: Prepare for building images
+    environment: dev
+    outputs:
+      dev-tag: ${{ steps.prep.outputs.BUILD_ID }}
+    steps:
+      - name: Generate build ID
+        id: prep
+        run: |
+          sha=${GITHUB_SHA::8}
+          ts=$(date +%s)
+          echo "BUILD_ID=dev-${sha}-${ts}" >> $GITHUB_OUTPUT
   build_and_test:
     runs-on: ubuntu-22.04
     strategy:
@@ -62,7 +76,9 @@ jobs:
       #     golang_version: "${{ env.GOLANG_VERSION }}"
 
   create_docker_images:
-    needs: [build_and_test]
+    needs: 
+      - build_and_test
+      - build-prep
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -115,7 +131,9 @@ jobs:
 
 
   push_docker_images:
-      needs: [create_docker_images]
+      needs: 
+        - create_docker_images
+        - build-prep
       runs-on: ubuntu-22.04
       strategy:
         matrix:
@@ -138,12 +156,9 @@ jobs:
           id: meta
           uses: docker/metadata-action@v5
           with:
-            images: harbor.maersk.io/mop/osctrl-admin
-            labels: |
-              org.opencontainers.image.title=osctrl-${{ matrix.components }}
+            images: ${{ env.OSCTRL_ADMIN_IMAGE }}
             tags: |
-                type=sha,prefix=,format=short
-                type=match,pattern=v(.*),group=1
+                type=raw,value=${{needs.build-prep.outputs.dev-tag}}
 
 
         ########################### Log into Dockerhub ###########################
@@ -170,9 +185,9 @@ jobs:
           working-directory: /tmp/digests
           run: |
             docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-              $(printf 'harbor.maersk.io/mop/osctrl-admin@sha256:%s ' *)
+              $(printf '${{ env.OSCTRL_ADMIN_IMAGE }}@sha256:%s ' *)
 
         ########################### Inspect new image ###########################
         - name: Inspect image
           run: |
-            docker buildx imagetools inspect harbor.maersk.io/mop/osctrl-admin:${{ steps.meta.outputs.version }}
+            docker buildx imagetools inspect ${{ env.OSCTRL_ADMIN_IMAGE }}:${{ steps.meta.outputs.version }}

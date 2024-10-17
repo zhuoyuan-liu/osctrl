@@ -24,7 +24,45 @@ jobs:
           sha=${GITHUB_SHA::8}
           ts=$(date +%s)
           echo "BUILD_ID=dev-${sha}-${ts}" >> $GITHUB_OUTPUT
+  build:
+    needs: build-prep
+    runs-on: ubuntu-22.04
+    name: Build docker images for tls, api, and cli
+    environment: dev
+    strategy:
+      matrix:
+        components: [tls, api, cli]
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Import secrets
+        uses: hashicorp/vault-action@v2.8.0
+        id: secrets
+        with:
+          url: ${{ secrets.VAULT_VAULT_URL }}
+          tlsSkipVerify: false
+          exportEnv: false
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          secrets: |
+            telemetry-kv/data/readable/harbor/mop-write-user PASSWORD;
+            telemetry-kv/data/readable/harbor/mop-write-user USERNAME;
+      - name: Build docker image
+        uses: ./.github/actions/build/ko-build
+        with:
+          osctrl_component: ${{ matrix.components }}
+          build_id: ${{needs.build-prep.outputs.dev-tag}}
+          cr_username: ${{ steps.secrets.outputs.USERNAME }}
+          cr_access_token: ${{ steps.secrets.outputs.PASSWORD }}
+          cr_name: harbor.maersk.io
+          cr_repo: mop
   build_and_test:
+    name: Build binaries for osctrl admin
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -88,7 +126,7 @@ jobs:
     steps:
       ########################### Checkout code ###########################
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
@@ -105,7 +143,7 @@ jobs:
         uses: hashicorp/vault-action@v2.8.0
         id: secrets
         with:
-          url: https://vault.maersk-digital.net
+          url: ${{ secrets.VAULT_VAULT_URL }}
           tlsSkipVerify: false
           exportEnv: false
           method: approle
@@ -166,7 +204,7 @@ jobs:
           uses: hashicorp/vault-action@v2.8.0
           id: secrets
           with:
-            url: https://vault.maersk-digital.net
+            url: ${{ secrets.VAULT_VAULT_URL }}
             tlsSkipVerify: false
             exportEnv: false
             method: approle

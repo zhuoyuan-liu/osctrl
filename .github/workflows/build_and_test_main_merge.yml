@@ -43,7 +43,7 @@ jobs:
         uses: hashicorp/vault-action@v2.8.0
         id: secrets
         with:
-          url: ${{ secrets.VAULT_VAULT_URL }}
+          url: ${{ secrets.VAULT_URL }}
           tlsSkipVerify: false
           exportEnv: false
           method: approle
@@ -166,6 +166,7 @@ jobs:
           docker_hub_org: ${{ secrets.DOCKER_HUB_ORG }}
           docker_hub_username: ${{ steps.secrets.outputs.USERNAME }}
           docker_hub_access_token: ${{ steps.secrets.outputs.PASSWORD }}
+          container_registry: harbor.maersk.io
 
 
   push_docker_images:

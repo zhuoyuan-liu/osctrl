@@ -1,4 +1,4 @@
-name: Build and test osctrl
+name: Build, test and push osctrl images
 
 on:
   push:

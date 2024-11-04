@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  GOLANG_VERSION: 1.23.0
+  GOLANG_VERSION: 1.23.1
   OSQUERY_VERSION: 5.13.1
   OSCTRL_ADMIN_IMAGE: ${{ secrets.CONTAINER_REGISTRY }}/${{ secrets.DOCKER_HUB_ORG }}/osctrl-admin
 

@@ -46,6 +46,7 @@ const (
 	LoggingKinesis  string = "kinesis"
 	LoggingS3       string = "s3"
 	LoggingKafka    string = "kafka"
+	LoggingElastic  string = "elastic"
 )
 
 // Types of carver
@@ -75,10 +76,12 @@ const (
 
 // Types of query/carve actions
 const (
-	QueryDelete string = "delete"
-	QueryExpire string = "expire"
-	CarveDelete string = QueryDelete
-	CarveExpire string = QueryExpire
+	QueryDelete   string = "delete"
+	QueryExpire   string = "expire"
+	QueryComplete string = "complete"
+	CarveDelete   string = QueryDelete
+	CarveExpire   string = QueryExpire
+	CarveComplete string = QueryComplete
 )
 
 // Types of package

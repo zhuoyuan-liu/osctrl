@@ -47,19 +47,6 @@ func carveToData(c carves.CarvedFile, header []string) [][]string {
 
 func listCarves(c *cli.Context) error {
 	// Get values from flags
-	target := "all"
-	if c.Bool("all") {
-		target = "all"
-	}
-	if c.Bool("active") {
-		target = "active"
-	}
-	if c.Bool("completed") {
-		target = "completed"
-	}
-	if c.Bool("deleted") {
-		target = "deleted"
-	}
 	env := c.String("env")
 	if env == "" {
 		fmt.Println("❌ environment is required")
@@ -110,11 +97,96 @@ func listCarves(c *cli.Context) error {
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader(header)
 		if len(cs) > 0 {
-			fmt.Printf("Existing %s queries (%d):\n", target, len(cs))
+			fmt.Printf("Existing carves (%d):\n", len(cs))
 			data := carvesToData(cs, nil)
 			table.AppendBulk(data)
 		} else {
-			fmt.Printf("No %s nodes\n", target)
+			fmt.Println("No carves")
+		}
+		table.Render()
+	}
+	return nil
+}
+
+func listCarveQueries(c *cli.Context) error {
+	// Get values from flags
+	target := "all"
+	if c.Bool("all") {
+		target = "all"
+	}
+	if c.Bool("active") {
+		target = "active"
+	}
+	if c.Bool("completed") {
+		target = "completed"
+	}
+	if c.Bool("deleted") {
+		target = "deleted"
+	}
+	if c.Bool("hidden") {
+		target = "hidden"
+	}
+	if c.Bool("expired") {
+		target = "expired"
+	}
+	env := c.String("env")
+	if env == "" {
+		fmt.Println("❌ environment is required")
+		os.Exit(1)
+	}
+	// Retrieve data
+	var qs []queries.DistributedQuery
+	if dbFlag {
+		e, err := envs.Get(env)
+		if err != nil {
+			return fmt.Errorf("❌ error env get - %s", err)
+		}
+		qs, err = queriesmgr.GetCarves(target, e.ID)
+		if err != nil {
+			return fmt.Errorf("❌ error get carve queries - %s", err)
+		}
+	} else if apiFlag {
+		qs, err = osctrlAPI.GetCarveQueries(target, env)
+		if err != nil {
+			return fmt.Errorf("❌ error get carve queries - %s", err)
+		}
+	}
+	header := []string{
+		"Name",
+		"Creator",
+		"Query",
+		"Type",
+		"Executions",
+		"Errors",
+		"Active",
+		"Hidden",
+		"Completed",
+		"Deleted",
+		"Expired",
+		"Expiration",
+	}
+	// Prepare output
+	if formatFlag == jsonFormat {
+		jsonRaw, err := json.Marshal(qs)
+		if err != nil {
+			return fmt.Errorf("❌ error json marshal - %s", err)
+		}
+		fmt.Println(string(jsonRaw))
+	} else if formatFlag == csvFormat {
+		data := queriesToData(qs, header)
+		w := csv.NewWriter(os.Stdout)
+		if err := w.WriteAll(data); err != nil {
+			return fmt.Errorf("❌ error csv writeall - %s", err)
+		}
+	} else if formatFlag == prettyFormat {
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader(header)
+		if len(qs) > 0 {
+			fmt.Printf("Existing %s carve queries (%d):\n", target, len(qs))
+			data := queriesToData(qs, nil)
+			table.AppendBulk(data)
+		} else {
+			fmt.Printf("No %s carve queries\n", target)
 		}
 		table.Render()
 	}
@@ -136,11 +208,19 @@ func completeCarve(c *cli.Context) error {
 	if dbFlag {
 		e, err := envs.Get(env)
 		if err != nil {
-			return err
+			return fmt.Errorf("❌ error env get - %s", err)
 		}
-		return queriesmgr.Complete(name, e.ID)
+		if err := queriesmgr.Complete(name, e.ID); err != nil {
+			return fmt.Errorf("❌ error completing carve - %s", err)
+		}
 	} else if apiFlag {
-		return osctrlAPI.CompleteQuery(env, name)
+		_, err := osctrlAPI.CompleteQuery(env, name)
+		if err != nil {
+			return fmt.Errorf("❌ error completing carve - %s", err)
+		}
+	}
+	if !silentFlag {
+		fmt.Printf("✅ carve %s completed successfully\n", name)
 	}
 	return nil
 }
@@ -160,11 +240,19 @@ func deleteCarve(c *cli.Context) error {
 	if dbFlag {
 		e, err := envs.Get(env)
 		if err != nil {
-			return err
+			return fmt.Errorf("❌ error env get - %s", err)
 		}
-		return queriesmgr.Delete(name, e.ID)
+		if err := queriesmgr.Delete(name, e.ID); err != nil {
+			return fmt.Errorf("❌ error deleting carve - %s", err)
+		}
 	} else if apiFlag {
-		return osctrlAPI.DeleteQuery(env, name)
+		_, err := osctrlAPI.DeleteQuery(env, name)
+		if err != nil {
+			return fmt.Errorf("❌ error deleting carve - %s", err)
+		}
+	}
+	if !silentFlag {
+		fmt.Printf("✅ carve %s deleted successfully\n", name)
 	}
 	return nil
 }
@@ -184,11 +272,19 @@ func expireCarve(c *cli.Context) error {
 	if dbFlag {
 		e, err := envs.Get(env)
 		if err != nil {
-			return err
+			return fmt.Errorf("❌ error env get - %s", err)
 		}
-		return queriesmgr.Expire(name, e.ID)
+		if err := queriesmgr.Expire(name, e.ID); err != nil {
+			return fmt.Errorf("❌ error expiring carve - %s", err)
+		}
 	} else if apiFlag {
-		return osctrlAPI.ExpireQuery(env, name)
+		_, err := osctrlAPI.ExpireQuery(env, name)
+		if err != nil {
+			return fmt.Errorf("❌ error expiring carve - %s", err)
+		}
+	}
+	if !silentFlag {
+		fmt.Printf("✅ carve %s expired successfully\n", name)
 	}
 	return nil
 }
@@ -214,7 +310,7 @@ func runCarve(c *cli.Context) error {
 	if dbFlag {
 		e, err := envs.Get(env)
 		if err != nil {
-			return err
+			return fmt.Errorf("❌ %s", err)
 		}
 		carveName := carves.GenCarveName()
 		newQuery := queries.DistributedQuery{
@@ -233,21 +329,21 @@ func runCarve(c *cli.Context) error {
 			EnvironmentID: e.ID,
 		}
 		if err := queriesmgr.Create(newQuery); err != nil {
-			return err
+			return fmt.Errorf("❌ %s", err)
 		}
 		if (uuid != "") && nodesmgr.CheckByUUID(uuid) {
 			if err := queriesmgr.CreateTarget(carveName, queries.QueryTargetUUID, uuid); err != nil {
-				return err
+				return fmt.Errorf("❌ error creating target - %s", err)
 			}
 		}
 		if err := queriesmgr.SetExpected(carveName, 1, e.ID); err != nil {
-			return err
+			return fmt.Errorf("❌ error setting expected - %s", err)
 		}
 		return nil
 	} else if apiFlag {
 		c, err := osctrlAPI.RunCarve(env, uuid, path, expHours)
 		if err != nil {
-			return err
+			return fmt.Errorf("❌ error running carve - %s", err)
 		}
 		if !silentFlag {
 			fmt.Printf("✅ carve %s created successfully\n", c.Name)

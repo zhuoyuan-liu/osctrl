@@ -7,8 +7,7 @@ on:
 
 env:
   GOLANG_VERSION: 1.23.1
-  OSQUERY_VERSION: 5.13.1
-  OSCTRL_ADMIN_IMAGE: ${{ secrets.CONTAINER_REGISTRY }}/${{ secrets.DOCKER_HUB_ORG }}/osctrl-admin
+  OSQUERY_VERSION: 5.14.1
 
 jobs:
   build-prep:

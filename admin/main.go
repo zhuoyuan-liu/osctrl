@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/crewjam/saml/samlsp"
@@ -78,7 +79,7 @@ const (
 	// Default redis configuration file
 	defRedisConfigurationFile string = "config/redis.json"
 	// Default Logger configuration file
-	defLoggerConfigurationFile string = "config/logger.json"
+	defLoggerConfigurationFile string = "config/logger_admin.json"
 	// Default TLS certificate file
 	defTLSCertificateFile string = "config/tls.crt"
 	// Default TLS private key file
@@ -256,6 +257,20 @@ func init() {
 			Usage:       "TCP port for the service",
 			EnvVars:     []string{"SERVICE_PORT"},
 			Destination: &adminConfigValues.Port,
+		},
+		&cli.StringFlag{
+			Name:        "log-level",
+			Value:       "info",
+			Usage:       "Log level for the service",
+			EnvVars:     []string{"SERVICE_LOG_LEVEL"},
+			Destination: &adminConfigValues.LogLevel,
+		},
+		&cli.StringFlag{
+			Name:        "log-format",
+			Value:       "json",
+			Usage:       "Log format for the service",
+			EnvVars:     []string{"SERVICE_LOG_FORMAT"},
+			Destination: &adminConfigValues.LogFormat,
 		},
 		&cli.StringFlag{
 			Name:        "auth",
@@ -642,11 +657,6 @@ func init() {
 			Destination: &s3CarverConfig.SecretAccessKey,
 		},
 	}
-	// Initialize zerolog logger with our custom parameters
-	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
-		return filepath.Base(file) + ":" + strconv.Itoa(line)
-	}
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "2006-01-02T15:04:05.999Z07:00"}).With().Caller().Logger()
 }
 
 // Go go!
@@ -736,6 +746,7 @@ func osctrlAdminService() {
 
 	// FIXME Redis cache - Ticker to cleanup sessions
 	// FIXME splay this?
+	log.Info().Msg("Initialize cleanup sessions")
 	go func() {
 		_t := settingsmgr.CleanupSessions()
 		if _t == 0 {
@@ -751,6 +762,7 @@ func osctrlAdminService() {
 	}()
 
 	// Goroutine to cleanup expired queries and carves
+	log.Info().Msg("Initialize cleanup queries/carves")
 	go func() {
 		_t := settingsmgr.CleanupExpired()
 		if _t == 0 {
@@ -765,10 +777,10 @@ func osctrlAdminService() {
 				log.Err(err).Msg("Error getting all environments")
 			}
 			for _, e := range allEnvs {
-				if err:= queriesmgr.CleanupExpiredQueries(e.ID); err != nil {
+				if err := queriesmgr.CleanupExpiredQueries(e.ID); err != nil {
 					log.Err(err).Msg("Error cleaning up expired queries")
 				}
-				if err:= queriesmgr.CleanupExpiredCarves(e.ID); err != nil {
+				if err := queriesmgr.CleanupExpiredCarves(e.ID); err != nil {
 					log.Err(err).Msg("Error cleaning up expired carves")
 				}
 			}
@@ -786,6 +798,7 @@ func osctrlAdminService() {
 	}
 
 	// Initialize Admin handlers before router
+	log.Info().Msg("Initializing handlers")
 	handlersAdmin = handlers.CreateHandlersAdmin(
 		handlers.WithDB(db.Conn),
 		handlers.WithEnvs(envs),
@@ -809,9 +822,7 @@ func osctrlAdminService() {
 	)
 
 	// ////////////////////////// ADMIN
-	if settingsmgr.DebugService(settings.ServiceAdmin) {
-		log.Debug().Msg("DebugService: Creating router")
-	}
+	log.Info().Msg("Initializing router")
 	// Create router for admin
 	adminMux := http.NewServeMux()
 
@@ -1025,6 +1036,35 @@ func cliAction(c *cli.Context) error {
 	return nil
 }
 
+func initializeLogger(logLevel, logFormat string) {
+
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
+	switch strings.ToLower(logFormat) {
+	case "json":
+		log.Logger = log.With().Caller().Logger()
+	case "console":
+		zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
+			return filepath.Base(file) + ":" + strconv.Itoa(line)
+		}
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "2006-01-02T15:04:05.999Z07:00"}).With().Caller().Logger()
+	default:
+		log.Logger = log.With().Caller().Logger()
+	}
+
+}
+
 func main() {
 	// Initiate CLI and parse arguments
 	app = cli.NewApp()
@@ -1045,8 +1085,13 @@ func main() {
 	}
 	app.Action = cliAction
 	if err := app.Run(os.Args); err != nil {
-		log.Fatal().Msgf("app.Run error: %v", err)
+		fmt.Printf("app.Run error: %s", err.Error())
+		os.Exit(1)
 	}
+
+	// Initialize service logger
+	initializeLogger(adminConfig.LogLevel, adminConfig.LogFormat)
+
 	// Service starts!
 	osctrlAdminService()
 }

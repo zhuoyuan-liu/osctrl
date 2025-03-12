@@ -76,6 +76,7 @@ const (
 var (
 	err                error
 	tlsConfigValues    types.JSONConfigurationTLS
+	tlsWriterConfig    types.JSONConfigurationTLSWriter
 	tlsConfig          types.JSONConfigurationTLS
 	dbConfigValues     backend.JSONConfigurationDB
 	dbConfig           backend.JSONConfigurationDB
@@ -270,6 +271,27 @@ func init() {
 			Usage:       "Logger mechanism to handle status/result logs from nodes",
 			EnvVars:     []string{"SERVICE_LOGGER"},
 			Destination: &tlsConfigValues.Logger,
+		},
+		&cli.IntFlag{
+			Name:        "writer-batch-size",
+			Value:       50,
+			Usage:       "Maximum number of events before flushing",
+			EnvVars:     []string{"WRITER_BATCH_SIZE"},
+			Destination: &tlsWriterConfig.WriterBatchSize,
+		},
+		&cli.DurationFlag{
+			Name:        "writer-timeout",
+			Value:       60 * time.Second,
+			Usage:       "Maximum wait time before flushing",
+			EnvVars:     []string{"WRITER_TIMEOUT"},
+			Destination: &tlsWriterConfig.WriterTimeout,
+		},
+		&cli.IntFlag{
+			Name:        "writer-buffer-size",
+			Value:       2000,
+			Usage:       "Size of the event channel buffer",
+			EnvVars:     []string{"WRITER_BUFFER_SIZE"},
+			Destination: &tlsWriterConfig.WriterBufferSize,
 		},
 		&cli.BoolFlag{
 			Name:        "redis",
@@ -628,7 +650,7 @@ func osctrlService() {
 	log.Info().Msg("Initialize settings")
 	settingsmgr = settings.NewSettings(db.Conn)
 	log.Info().Msg("Initialize nodes")
-	nodesmgr = nodes.CreateNodes(db.Conn)
+	nodesmgr = nodes.CreateNodes(db.Conn, redis.Client)
 	log.Info().Msg("Initialize tags")
 	tagsmgr = tags.CreateTagManager(db.Conn)
 	log.Info().Msg("Initialize queries")
@@ -639,6 +661,14 @@ func osctrlService() {
 	if err := loadingSettings(settingsmgr); err != nil {
 		log.Fatal().Msgf("Error loading settings - %s: %v", tlsConfig.Logger, err)
 	}
+	// Initialize batch writer
+	log.Info().Msg("Initializing batch writer")
+	tlsWriter := handlers.NewBatchWriter(
+		tlsWriterConfig.WriterBatchSize,
+		tlsWriterConfig.WriterTimeout,
+		tlsWriterConfig.WriterBufferSize,
+		*nodesmgr,
+	)
 	// Initialize service metrics
 	log.Info().Msg("Loading service metrics")
 	tlsMetrics, err = loadingMetrics(settingsmgr)
@@ -717,6 +747,7 @@ func osctrlService() {
 		handlers.WithSettingsMap(&settingsmap),
 		handlers.WithMetrics(tlsMetrics),
 		handlers.WithLogs(loggerTLS),
+		handlers.WithWriteHandler(tlsWriter),
 	)
 
 	// ///////////////////////// ALL CONTENT IS UNAUTHENTICATED FOR TLS

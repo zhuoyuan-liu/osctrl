@@ -104,7 +104,7 @@ var validCarver = map[string]bool{
 	settings.CarverS3:    true,
 }
 
-// Function to load the configuration file and assign to variables
+// Function to load the legacy configuration file and assign to variables
 func loadConfiguration(file, service string) (types.JSONConfigurationTLS, error) {
 	var cfg types.JSONConfigurationTLS
 	// Load file and read config
@@ -136,33 +136,212 @@ func loadConfiguration(file, service string) (types.JSONConfigurationTLS, error)
 
 // Action to run when no flags are provided to run checks and prepare data
 func cliAction(c *cli.Context) error {
-	// Load configuration if external JSON config file is used
+	// Load configuration from a single JSON file if the config flag is set
 	if flagParams.ConfigFlag {
-		tlsConfig, err = loadConfiguration(flagParams.ServiceConfigFile, settings.ServiceTLS)
+		completeConfig, err := config.LoadCompleteConfiguration(flagParams.ServiceConfigFile)
 		if err != nil {
 			return fmt.Errorf("Error loading %s - %w", flagParams.ServiceConfigFile, err)
 		}
-	} else {
-		tlsConfig = flagParams.TLSConfigValues
-	}
-	// Load db configuration if external JSON config file is used
-	if flagParams.DBFlag {
-		dbConfig, err = backend.LoadConfiguration(flagParams.DBConfigFile, backend.DBKey)
-		if err != nil {
-			return fmt.Errorf("Failed to load DB configuration - %w", err)
+
+		// Load base configurations
+		tlsConfig = completeConfig.TLSConfig
+		dbConfig = completeConfig.DBConfig
+		redisConfig = completeConfig.RedisConfig
+
+		// Now override with any CLI flags or environment variables that were explicitly set
+
+		// Override TLS config values that were explicitly set via flags
+		if c.IsSet("listener") || os.Getenv("SERVICE_LISTENER") != "" {
+			tlsConfig.Listener = flagParams.TLSConfigValues.Listener
+		}
+		if c.IsSet("port") || os.Getenv("SERVICE_PORT") != "" {
+			tlsConfig.Port = flagParams.TLSConfigValues.Port
+		}
+		if c.IsSet("host") || os.Getenv("SERVICE_HOST") != "" {
+			tlsConfig.Host = flagParams.TLSConfigValues.Host
+		}
+		if c.IsSet("auth") || os.Getenv("SERVICE_AUTH") != "" {
+			tlsConfig.Auth = flagParams.TLSConfigValues.Auth
+		}
+		if c.IsSet("log-level") || os.Getenv("SERVICE_LOG_LEVEL") != "" {
+			tlsConfig.LogLevel = flagParams.TLSConfigValues.LogLevel
+		}
+		if c.IsSet("log-format") || os.Getenv("SERVICE_LOG_FORMAT") != "" {
+			tlsConfig.LogFormat = flagParams.TLSConfigValues.LogFormat
+		}
+		if c.IsSet("logger") || os.Getenv("SERVICE_LOGGER") != "" {
+			tlsConfig.Logger = flagParams.TLSConfigValues.Logger
+		}
+		if c.IsSet("metrics-listener") || os.Getenv("METRICS_LISTENER") != "" {
+			tlsConfig.MetricsListener = flagParams.TLSConfigValues.MetricsListener
+		}
+		if c.IsSet("metrics-port") || os.Getenv("METRICS_PORT") != "" {
+			tlsConfig.MetricsPort = flagParams.TLSConfigValues.MetricsPort
+		}
+		if c.IsSet("metrics-enabled") || os.Getenv("METRICS_ENABLED") != "" {
+			tlsConfig.MetricsEnabled = flagParams.TLSConfigValues.MetricsEnabled
+		}
+		if c.IsSet("carver-type") || os.Getenv("CARVER_TYPE") != "" {
+			tlsConfig.Carver = flagParams.TLSConfigValues.Carver
+		}
+
+		// TLS Writer configurations
+		if c.IsSet("writer-batch-size") || os.Getenv("WRITER_BATCH_SIZE") != "" {
+			flagParams.TLSWriterConfig = completeConfig.TLSWriterConfig
+			flagParams.TLSWriterConfig.WriterBatchSize = flagParams.TLSWriterConfig.WriterBatchSize
+		} else {
+			flagParams.TLSWriterConfig = completeConfig.TLSWriterConfig
+		}
+		if c.IsSet("writer-timeout") || os.Getenv("WRITER_TIMEOUT") != "" {
+			flagParams.TLSWriterConfig.WriterTimeout = flagParams.TLSWriterConfig.WriterTimeout
+		}
+		if c.IsSet("writer-buffer-size") || os.Getenv("WRITER_BUFFER_SIZE") != "" {
+			flagParams.TLSWriterConfig.WriterBufferSize = flagParams.TLSWriterConfig.WriterBufferSize
+		}
+
+		// S3 Configurations
+		if c.IsSet("log-s3-bucket") || os.Getenv("LOG_S3_BUCKET") != "" {
+			flagParams.S3LogConfig = completeConfig.S3LogConfig
+			flagParams.S3LogConfig.Bucket = flagParams.S3LogConfig.Bucket
+		} else {
+			flagParams.S3LogConfig = completeConfig.S3LogConfig
+		}
+		if c.IsSet("log-s3-region") || os.Getenv("LOG_S3_REGION") != "" {
+			flagParams.S3LogConfig.Region = flagParams.S3LogConfig.Region
+		}
+		if c.IsSet("log-s3-key-id") || os.Getenv("LOG_S3_KEY_ID") != "" {
+			flagParams.S3LogConfig.AccessKey = flagParams.S3LogConfig.AccessKey
+		}
+		if c.IsSet("log-s3-secret") || os.Getenv("LOG_S3_SECRET") != "" {
+			flagParams.S3LogConfig.SecretAccessKey = flagParams.S3LogConfig.SecretAccessKey
+		}
+
+		if c.IsSet("carver-s3-bucket") || os.Getenv("CARVER_S3_BUCKET") != "" {
+			flagParams.S3CarverConfig = completeConfig.S3CarverConfig
+			flagParams.S3CarverConfig.Bucket = flagParams.S3CarverConfig.Bucket
+		} else {
+			flagParams.S3CarverConfig = completeConfig.S3CarverConfig
+		}
+		if c.IsSet("carver-s3-region") || os.Getenv("CARVER_S3_REGION") != "" {
+			flagParams.S3CarverConfig.Region = flagParams.S3CarverConfig.Region
+		}
+		if c.IsSet("carver-s3-key-id") || os.Getenv("CARVER_S3_KEY_ID") != "" {
+			flagParams.S3CarverConfig.AccessKey = flagParams.S3CarverConfig.AccessKey
+		}
+		if c.IsSet("carver-s3-secret") || os.Getenv("CARVER_S3_SECRET") != "" {
+			flagParams.S3CarverConfig.SecretAccessKey = flagParams.S3CarverConfig.SecretAccessKey
+		}
+
+		// Kafka configuration
+		if c.IsSet("log-kafka-boostrap-servers") || os.Getenv("LOG_KAFKA_BOOTSTRAP_SERVERS") != "" {
+			flagParams.KafkaConfiguration = completeConfig.KafkaConfig
+			flagParams.KafkaConfiguration.BoostrapServer = flagParams.KafkaConfiguration.BoostrapServer
+		} else {
+			flagParams.KafkaConfiguration = completeConfig.KafkaConfig
+		}
+		if c.IsSet("log-kafka-sslca-location") || os.Getenv("LOG_KAFKA_SSLCA_LOCATION") != "" {
+			flagParams.KafkaConfiguration.SSLCALocation = flagParams.KafkaConfiguration.SSLCALocation
+		}
+		if c.IsSet("log-kafka-connection-timeout") || os.Getenv("LOG_KAFKA_CONNECTION_TIMEOUT") != "" {
+			flagParams.KafkaConfiguration.ConnectionTimeout = flagParams.KafkaConfiguration.ConnectionTimeout
+		}
+		if c.IsSet("log-kafka-topic") || os.Getenv("LOG_KAFKA_TOPIC") != "" {
+			flagParams.KafkaConfiguration.Topic = flagParams.KafkaConfiguration.Topic
+		}
+		if c.IsSet("log-kafka-sasl-mechanism") || os.Getenv("LOG_KAFKA_SASL_MECHANISM") != "" {
+			flagParams.KafkaConfiguration.SASL.Mechanism = flagParams.KafkaConfiguration.SASL.Mechanism
+		}
+		if c.IsSet("log-kafka-sasl-username") || os.Getenv("LOG_KAFKA_SASL_USERNAME") != "" {
+			flagParams.KafkaConfiguration.SASL.Username = flagParams.KafkaConfiguration.SASL.Username
+		}
+		if c.IsSet("log-kafka-sasl-password") || os.Getenv("LOG_KAFKA_SASL_PASSWORD") != "" {
+			flagParams.KafkaConfiguration.SASL.Password = flagParams.KafkaConfiguration.SASL.Password
+		}
+
+		// DB Configuration
+		if c.IsSet("db-host") || os.Getenv("DB_HOST") != "" {
+			dbConfig.Host = flagParams.DBConfigValues.Host
+		}
+		if c.IsSet("db-port") || os.Getenv("DB_PORT") != "" {
+			dbConfig.Port = flagParams.DBConfigValues.Port
+		}
+		if c.IsSet("db-name") || os.Getenv("DB_NAME") != "" {
+			dbConfig.Name = flagParams.DBConfigValues.Name
+		}
+		if c.IsSet("db-user") || os.Getenv("DB_USER") != "" {
+			dbConfig.Username = flagParams.DBConfigValues.Username
+		}
+		if c.IsSet("db-pass") || os.Getenv("DB_PASS") != "" {
+			dbConfig.Password = flagParams.DBConfigValues.Password
+		}
+		if c.IsSet("db-sslmode") || os.Getenv("DB_SSLMODE") != "" {
+			dbConfig.SSLMode = flagParams.DBConfigValues.SSLMode
+		}
+		if c.IsSet("db-max-idle-conns") || os.Getenv("DB_MAX_IDLE_CONNS") != "" {
+			dbConfig.MaxIdleConns = flagParams.DBConfigValues.MaxIdleConns
+		}
+		if c.IsSet("db-max-open-conns") || os.Getenv("DB_MAX_OPEN_CONNS") != "" {
+			dbConfig.MaxOpenConns = flagParams.DBConfigValues.MaxOpenConns
+		}
+		if c.IsSet("db-conn-max-lifetime") || os.Getenv("DB_CONN_MAX_LIFETIME") != "" {
+			dbConfig.ConnMaxLifetime = flagParams.DBConfigValues.ConnMaxLifetime
+		}
+		if c.IsSet("db-conn-retry") || os.Getenv("DB_CONN_RETRY") != "" {
+			dbConfig.ConnRetry = flagParams.DBConfigValues.ConnRetry
+		}
+
+		// Redis Configuration
+		if c.IsSet("redis-connection-string") || os.Getenv("REDIS_CONNECTION_STRING") != "" {
+			redisConfig.ConnectionString = flagParams.RedisConfigValues.ConnectionString
+		}
+		if c.IsSet("redis-host") || os.Getenv("REDIS_HOST") != "" {
+			redisConfig.Host = flagParams.RedisConfigValues.Host
+		}
+		if c.IsSet("redis-port") || os.Getenv("REDIS_PORT") != "" {
+			redisConfig.Port = flagParams.RedisConfigValues.Port
+		}
+		if c.IsSet("redis-pass") || os.Getenv("REDIS_PASS") != "" {
+			redisConfig.Password = flagParams.RedisConfigValues.Password
+		}
+		if c.IsSet("redis-db") || os.Getenv("REDIS_DB") != "" {
+			redisConfig.DB = flagParams.RedisConfigValues.DB
+		}
+		if c.IsSet("redis-conn-retry") || os.Getenv("REDIS_CONN_RETRY") != "" {
+			redisConfig.ConnRetry = flagParams.RedisConfigValues.ConnRetry
 		}
 	} else {
-		dbConfig = flagParams.DBConfigValues
-	}
-	// Load redis configuration if external JSON config file is used
-	if flagParams.RedisFlag {
-		redisConfig, err = cache.LoadConfiguration(flagParams.RedisConfigFile, cache.RedisKey)
-		if err != nil {
-			return fmt.Errorf("Failed to load redis configuration - %w", err)
+		// Legacy mode - support for backward compatibility
+		// Load TLS configuration if external JSON config file is used for TLS service
+		if flagParams.ConfigFlag {
+			tlsConfig, err = loadConfiguration(flagParams.ServiceConfigFile, settings.ServiceTLS)
+			if err != nil {
+				return fmt.Errorf("Error loading %s - %w", flagParams.ServiceConfigFile, err)
+			}
+		} else {
+			tlsConfig = flagParams.TLSConfigValues
 		}
-	} else {
-		redisConfig = flagParams.RedisConfigValues
+
+		// Load db configuration if external JSON config file is used
+		if flagParams.DBFlag {
+			dbConfig, err = backend.LoadConfiguration(flagParams.DBConfigFile, backend.DBKey)
+			if err != nil {
+				return fmt.Errorf("Failed to load DB configuration - %w", err)
+			}
+		} else {
+			dbConfig = flagParams.DBConfigValues
+		}
+
+		// Load redis configuration if external JSON config file is used
+		if flagParams.RedisFlag {
+			redisConfig, err = cache.LoadConfiguration(flagParams.RedisConfigFile, cache.RedisKey)
+			if err != nil {
+				return fmt.Errorf("Failed to load redis configuration - %w", err)
+			}
+		} else {
+			redisConfig = flagParams.RedisConfigValues
+		}
 	}
+
 	// Load carver configuration if external JSON config file is used
 	if tlsConfig.Carver == settings.CarverS3 {
 		if flagParams.S3CarverConfig.Bucket != "" {

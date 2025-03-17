@@ -1,0 +1,63 @@
+{
+  "tls": {
+    "listener": "0.0.0.0",
+    "port": "9000",
+    "host": "0.0.0.0",
+    "auth": "none",
+    "logger": "db",
+    "carver": "db",
+    "log_level": "info",
+    "log_format": "json",
+    "metrics_listener": "0.0.0.0",
+    "metrics_port": "9090",
+    "metrics_enabled": false
+  },
+  "db": {
+    "host": "127.0.0.1",
+    "port": "5432",
+    "name": "osctrl",
+    "username": "postgres",
+    "password": "postgres",
+    "sslmode": "disable",
+    "max_idle_conns": 20,
+    "max_open_conns": 100,
+    "conn_max_lifetime": 30,
+    "conn_retry": 7
+  },
+  "redis": {
+    "connection_string": "",
+    "host": "127.0.0.1",
+    "port": "6379",
+    "password": "",
+    "db": 0,
+    "conn_retry": 7
+  },
+  "tls_writer": {
+    "writer_batch_size": 50,
+    "writer_timeout": 60000000000,
+    "writer_buffer_size": 2000
+  },
+  "s3_log": {
+    "bucket": "",
+    "region": "",
+    "access_key": "",
+    "secret_access_key": ""
+  },
+  "s3_carver": {
+    "bucket": "",
+    "region": "",
+    "access_key": "",
+    "secret_access_key": ""
+  },
+  "kafka": {
+    "bootstrap_server": "",
+    "ssl_ca_location": "",
+    "connection_timeout": 5000000000,
+    "topic": "",
+    "sasl": {
+      "mechanism": "",
+      "username": "",
+      "password": ""
+    }
+  }
+}

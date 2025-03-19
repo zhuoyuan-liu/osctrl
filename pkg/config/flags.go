@@ -1,6 +1,9 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/jmpsec/osctrl/pkg/backend"
@@ -10,15 +13,28 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// CompleteConfiguration represents the complete configuration for the TLS service
+type CompleteConfiguration struct {
+	TLSConfig       types.JSONConfigurationTLS       `json:"tls"`
+	DBConfig        backend.JSONConfigurationDB      `json:"db"`
+	RedisConfig     cache.JSONConfigurationRedis     `json:"redis"`
+	TLSWriterConfig types.JSONConfigurationTLSWriter `json:"tls_writer"`
+	S3LogConfig     types.S3Configuration            `json:"s3_log"`
+	S3CarverConfig  types.S3Configuration            `json:"s3_carver"`
+	KafkaConfig     types.KafkaConfiguration         `json:"kafka"`
+}
+
 // TLSFlagParams stores flag values for the TLS service
 type TLSFlagParams struct {
 	// Config flags
 	ConfigFlag        bool
 	ServiceConfigFile string
-	RedisConfigFile   string
-	DBFlag            bool
-	RedisFlag         bool
-	DBConfigFile      string
+
+	// For backwards compatibility
+	RedisConfigFile string
+	DBFlag          bool
+	RedisFlag       bool
+	DBConfigFile    string
 
 	// TLS Server flags
 	TLSServer   bool
@@ -41,6 +57,25 @@ type TLSFlagParams struct {
 	S3LogConfig        types.S3Configuration
 	S3CarverConfig     types.S3Configuration
 	KafkaConfiguration types.KafkaConfiguration
+}
+
+// LoadCompleteConfiguration loads the complete configuration from a single JSON file
+func LoadCompleteConfiguration(filepath string) (*CompleteConfiguration, error) {
+	var config CompleteConfiguration
+
+	// Read the file
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read configuration file: %w", err)
+	}
+
+	// Parse the JSON
+	err = json.Unmarshal(data, &config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse configuration file: %w", err)
+	}
+
+	return &config, nil
 }
 
 // InitTLSFlags initializes all the flags needed for the TLS service
@@ -77,8 +112,8 @@ func initConfigFlags(params *TLSFlagParams) []cli.Flag {
 		&cli.StringFlag{
 			Name:        "config-file",
 			Aliases:     []string{"C"},
-			Value:       "config/" + settings.ServiceTLS + ".json",
-			Usage:       "Load service configuration from `FILE`",
+			Value:       "config/osctrl.json",
+			Usage:       "Load complete service configuration from `FILE`",
 			EnvVars:     []string{"SERVICE_CONFIG_FILE"},
 			Destination: &params.ServiceConfigFile,
 		},

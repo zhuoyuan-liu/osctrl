@@ -128,32 +128,3 @@ func (e *MultiExporter) AddExporter(exporter Exporter) {
 	defer e.mu.Unlock()
 	e.exporters = append(e.exporters, exporter)
 }
-
-// RemoveExporter removes an exporter by name
-func (e *MultiExporter) RemoveExporter(name string) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	for i, exp := range e.exporters {
-		if exp.Name() == name {
-			// Remove the exporter by swapping with the last element and truncating
-			e.exporters[i] = e.exporters[len(e.exporters)-1]
-			e.exporters = e.exporters[:len(e.exporters)-1]
-			return true
-		}
-	}
-
-	return false
-}
-
-// GetExporters returns all configured exporters
-func (e *MultiExporter) GetExporters() []Exporter {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	// Create a copy to avoid race conditions
-	exporters := make([]Exporter, len(e.exporters))
-	copy(exporters, e.exporters)
-
-	return exporters
-}

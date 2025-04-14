@@ -1,0 +1,51 @@
+meta {
+  name: Write-query
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{tlsURL}}/{{env}}/write
+  body: json
+  auth: none
+}
+
+headers {
+  : 
+}
+
+body:json {
+  {   
+      "node_key": "8f1887e292dcb05ef20c7ad1907a3dd296ae22ee",
+      "queries": {
+      "system_info": [
+        {
+          "hostname": "host01",
+          "computer_name": "DESKTOP-ABC123",
+          "cpu_brand": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
+          "cpu_logical_cores": "8",
+          "cpu_physical_cores": "8",
+          "physical_memory": "16384"
+        }
+      ],
+      "os_version": [
+        {
+          "name": "Ubuntu",
+          "version": "20.04.3",
+          "major": "20",
+          "minor": "04",
+          "patch": "3",
+          "platform": "ubuntu"
+        }
+      ]
+    },
+    "statuses": {
+      "system_info": 0,
+      "os_version": 0
+    },
+    "messages": {
+      "system_info": "",
+      "os_version": ""
+    }
+  }
+}

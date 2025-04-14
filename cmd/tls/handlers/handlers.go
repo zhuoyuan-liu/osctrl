@@ -8,6 +8,7 @@ import (
 	"github.com/jmpsec/osctrl/pkg/carves"
 	"github.com/jmpsec/osctrl/pkg/config"
 	"github.com/jmpsec/osctrl/pkg/environments"
+	"github.com/jmpsec/osctrl/pkg/exporter"
 	"github.com/jmpsec/osctrl/pkg/logging"
 	"github.com/jmpsec/osctrl/pkg/nodes"
 	"github.com/jmpsec/osctrl/pkg/queries"
@@ -57,7 +58,7 @@ type HandlersTLS struct {
 	Carves          *carves.Carves
 	Settings        *settings.Settings
 	SettingsMap     *settings.MapSettings
-	Logs            *logging.LoggerTLS
+	Logs            *exporter.TLSExporter
 	WriteHandler    *batchWriter
 	DebugHTTP       *zerolog.Logger
 	DebugHTTPConfig *config.DebugHTTPConfiguration
@@ -128,7 +129,7 @@ func WithCarves(carves *carves.Carves) Option {
 }
 
 // WithLogs to pass value as option
-func WithLogs(logs *logging.LoggerTLS) Option {
+func WithLogs(logs *exporter.TLSExporter) Option {
 	return func(h *HandlersTLS) {
 		h.Logs = logs
 	}

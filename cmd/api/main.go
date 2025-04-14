@@ -16,7 +16,6 @@ import (
 	"github.com/jmpsec/osctrl/pkg/carves"
 	"github.com/jmpsec/osctrl/pkg/config"
 	"github.com/jmpsec/osctrl/pkg/environments"
-	"github.com/jmpsec/osctrl/pkg/logging"
 	"github.com/jmpsec/osctrl/pkg/nodes"
 	"github.com/jmpsec/osctrl/pkg/queries"
 	"github.com/jmpsec/osctrl/pkg/settings"
@@ -433,7 +432,7 @@ func initializeLoggers(cfg config.JSONConfigurationService) {
 		zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
 			return filepath.Base(file) + ":" + strconv.Itoa(line)
 		}
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: logging.LoggerTimeFormat}).With().Caller().Logger()
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}).With().Caller().Logger()
 	default:
 		log.Logger = log.With().Caller().Logger()
 	}

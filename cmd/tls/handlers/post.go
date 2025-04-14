@@ -243,7 +243,10 @@ func (h *HandlersTLS) LogHandler(w http.ResponseWriter, r *http.Request) {
 		// Process logs and update metadata
 		go func() {
 			start := time.Now()
-			h.Logs.ProcessLogs(t.Data, t.LogType, env.Name, utils.GetIP(r), len(body), (*h.EnvsMap)[env.Name].DebugHTTP)
+			ctx := context.Background()
+			if err := h.Logs.Export(ctx, t.LogType, t.Data, env.Name, node.UUID); err != nil {
+				log.Error().Err(err).Msg("Failed to export logs")
+			}
 			duration := time.Since(start).Seconds()
 			logProcessDuration.WithLabelValues(string(env.UUID), t.LogType).Observe(duration)
 		}()
@@ -370,6 +373,8 @@ func (h *HandlersTLS) QueryWriteHandler(w http.ResponseWriter, r *http.Request) 
 		utils.HTTPResponse(w, "", http.StatusInternalServerError, []byte(""))
 		return
 	}
+	// DELETE me: Print whole body for debugging
+	log.Debug().Msgf("QueryWriteHandler body: %s", string(body))
 	if err := json.Unmarshal(body, &t); err != nil {
 		log.Err(err).Msg("error parsing POST body")
 		utils.HTTPResponse(w, "", http.StatusInternalServerError, []byte(""))
@@ -404,7 +409,14 @@ func (h *HandlersTLS) QueryWriteHandler(w http.ResponseWriter, r *http.Request) 
 		// Process submitted results and mark query as processed
 		go func() {
 			start := time.Now()
-			h.Logs.ProcessLogQueryResult(t, env.ID, (*h.EnvsMap)[env.Name].DebugHTTP)
+			ctx := context.Background()
+			for name, result := range t.Queries {
+				// Extract query status (this is often 0 for success)
+				status := 0
+				if err := h.Logs.ExportQuery(ctx, result, env.Name, node.UUID, name, status); err != nil {
+					log.Error().Err(err).Msgf("Failed to export query results for %s", name)
+				}
+			}
 			duration := time.Since(start).Seconds()
 			distributedQueryProcessingDuration.WithLabelValues(string(env.UUID)).Observe(duration)
 		}()

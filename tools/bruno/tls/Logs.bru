@@ -1,0 +1,40 @@
+meta {
+  name: Logs
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{tlsURL}}/{{env}}/log
+  body: json
+  auth: none
+}
+
+headers {
+  : 
+}
+
+body:json {
+  {
+  "node_key": "8f1887e292dcb05ef20c7ad1907a3dd296ae22ee",
+  "log_type": "status",
+  "data": {
+      "hostIdentifier": "osquery-c4d7b497-sq2wr",
+      "calendarTime": "Sat Apr 12 20:22:00 2025 UTC",
+      "unixTime": 1744489320,
+      "severity": 0,
+      "filename": "config.cpp",
+      "line": 1309,
+      "message": "Refreshing configuration state",
+      "version": "5.12.1",
+      "decorations": {
+          "config_hash": "84587369dc6a17447059db67739e3f1a61d95c68",
+          "hostname": "osquery-c4d7b497-sq2wr",
+          "local_hostname": "osquery-c4d7b497-sq2wr",
+          "osquery_md5": "",
+          "osquery_user": "root",
+          "osquery_version": "5.12.1"
+      }
+  }
+  }
+}

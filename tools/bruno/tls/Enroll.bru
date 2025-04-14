@@ -1,0 +1,75 @@
+meta {
+  name: Enroll
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{tlsURL}}/{{env}}/enroll
+  body: json
+  auth: none
+}
+
+headers {
+  : 
+}
+
+body:json {
+  {
+      "enroll_secret": "{{enrollSecret}}",
+      "host_identifier": "osquery-c4d7b497-sq2wr",
+      "platform_type": "9",
+      "host_details": {
+          "os_version": {
+              "_id": "12",
+              "codename": "bookworm",
+              "major": "12",
+              "minor": "0",
+              "name": "Debian GNU/Linux",
+              "patch": "0",
+              "platform": "debian",
+              "platform_like": "",
+              "version": "12 (bookworm)"
+          },
+          "osquery_info": {
+              "build_distro": "centos7",
+              "build_platform": "linux",
+              "config_hash": "",
+              "config_valid": "0",
+              "extensions": "active",
+              "instance_id": "d4de9549-71d5-4fd3-9ea3-afe46ddf5129",
+              "pid": "8",
+              "start_time": "1729758923",
+              "uuid": "1d125c85-6277-406a-9d21-cab883724cf4",
+              "version": "5.12.1",
+              "watcher": "1"
+          },
+          "system_info": {
+              "computer_name": "osquery-c4d7b497-sq2wr",
+              "cpu_brand": "",
+              "cpu_logical_cores": "8",
+              "cpu_physical_cores": "8",
+              "cpu_subtype": "0",
+              "cpu_type": "aarch64",
+              "hardware_model": "",
+              "hardware_serial": "",
+              "hardware_vendor": "",
+              "hardware_version": "",
+              "hostname": "osquery-c4d7b497-sq2wr",
+              "local_hostname": "osquery-c4d7b497-sq2wr",
+              "physical_memory": "33596194816",
+              "uuid": "1d125c85-6277-406a-9d21-cab883724cf4"
+          },
+          "platform_info": {
+              "address": "",
+              "date": "",
+              "extra": "",
+              "revision": "",
+              "size": "",
+              "vendor": "",
+              "version": "",
+              "volume_size": ""
+          }
+      }
+  }
+}

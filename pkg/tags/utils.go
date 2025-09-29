@@ -8,20 +8,22 @@ import (
 )
 
 const (
-	// TagTypeEnvironmentStr is the tag type for environment
-	TagTypeEnvironmentStr = "Environment"
 	// TagTypeEnvStr is the tag type for shortened environment
-	TagTypeEnvStr = "Env"
+	TagTypeEnvStr = "env"
 	// TagTypeUUIDStr is the tag type for UUID
-	TagTypeUUIDStr = "UUID"
+	TagTypeUUIDStr = "uuid"
 	// TagTypePlatformStr is the tag type for platform
-	TagTypePlatformStr = "Platform"
+	TagTypePlatformStr = "platform"
 	// TagTypeLocalnameStr is the tag type for localname
-	TagTypeLocalnameStr = "Localname"
+	TagTypeLocalnameStr = "localname"
+	// TagTypeHostnameStr is the tag type for hostname
+	TagTypeHostnameStr = "hostname"
 	// TagTypeCustomStr is the tag type for custom
-	TagTypeCustomStr = "Custom"
+	TagTypeCustomStr = "custom"
 	// TagTypeUnknownStr is the tag type for unknown
-	TagTypeUnknownStr = "Unknown"
+	TagTypeUnknownStr = "unknown"
+	// TagTypeTagStr is the tag type for tag
+	TagTypeTagStr = "tag"
 )
 
 // Helper to generate a random color in hex for HTML
@@ -47,15 +49,19 @@ func GetHex(num int) string {
 func TagTypeDecorator(tagType uint) string {
 	switch tagType {
 	case TagTypeEnv:
-		return TagTypeEnvironmentStr
+		return TagTypeEnvStr
 	case TagTypeUUID:
 		return TagTypeUUIDStr
 	case TagTypePlatform:
 		return TagTypePlatformStr
 	case TagTypeLocalname:
 		return TagTypeLocalnameStr
+	case TagTypeHostname:
+		return TagTypeHostnameStr
 	case TagTypeCustom:
 		return TagTypeCustomStr
+	case TagTypeTag:
+		return TagTypeTagStr
 	default:
 		return TagTypeUnknownStr
 	}
@@ -74,7 +80,75 @@ func TagTypeParser(tagType string) uint {
 		return TagTypeLocalname
 	case strings.ToUpper(TagTypeCustomStr):
 		return TagTypeCustom
+	case strings.ToUpper(TagTypeTagStr):
+		return TagTypeTag
 	default:
 		return TagTypeUnknown
+	}
+}
+
+// Helper to define the custom tag value based on the type
+func SetCustomTag(tagType uint, custom string) string {
+	var tagCustom string
+	switch tagType {
+	case TagTypeEnv:
+		tagCustom = TagCustomEnv
+	case TagTypeUUID:
+		tagCustom = TagCustomUUID
+	case TagTypePlatform:
+		tagCustom = TagCustomPlatform
+	case TagTypeLocalname:
+		tagCustom = TagCustomLocalname
+	case TagTypeHostname:
+		tagCustom = TagCustomHostname
+	case TagTypeCustom:
+		tagCustom = custom
+	case TagTypeUnknown:
+		tagCustom = TagCustomUnknown
+	case TagTypeTag:
+		tagCustom = TagCustomTag
+	default:
+		tagCustom = TagCustomTag
+	}
+	return tagCustom
+}
+
+// Helper to convert a slice of tags to a slice of strings
+func TagsToStrings(tags []AdminTag) []string {
+	var tagStrings []string
+	for _, tag := range tags {
+		if tag.TagType == TagTypeCustom || tag.TagType == TagTypeTag {
+			tagStrings = append(tagStrings, fmt.Sprintf("%s:%s", tag.CustomTag, tag.Name))
+		}
+	}
+	return tagStrings
+}
+
+// Helper to extract custom tag and name from a full tag string
+func GetStrTagName(fullTag string) string {
+	parts := strings.SplitN(fullTag, ":", 2)
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return fullTag
+}
+
+// Helper to make sure the custom value is valid
+func ValidateCustom(anyCustom string) string {
+	switch strings.ToUpper(anyCustom) {
+	case strings.ToUpper(TagTypeEnvStr):
+		return TagTypeEnvStr
+	case strings.ToUpper(TagTypeUUIDStr):
+		return TagTypeUUIDStr
+	case strings.ToUpper(TagTypePlatformStr):
+		return TagTypePlatformStr
+	case strings.ToUpper(TagTypeLocalnameStr):
+		return TagTypeLocalnameStr
+	case strings.ToUpper(TagTypeCustomStr):
+		return TagTypeCustomStr
+	case strings.ToUpper(TagTypeTagStr):
+		return TagTypeTagStr
+	default:
+		return TagTypeUnknownStr
 	}
 }

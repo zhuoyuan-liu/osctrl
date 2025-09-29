@@ -1,5 +1,5 @@
-name: "Sign Osctrl Docker images"
-description: "Sign Osctrl Docker images"
+name: "Sign osctrl Docker images"
+description: "Sign osctrl Docker images"
 inputs:
   osctrl_component:
     required: true
@@ -19,67 +19,53 @@ inputs:
   docker_hub_access_token:
     required: true
     description: Pass DockerHub access token to action
-  codesign_password:
-    required: true
-    description: Provide password for codesign private key
-  codesign_private_key:
-    required: true
-    description: Provide codesign private key
-  codesign_public_cert:
-    required: true
-    description: Provide codesign private cert
 
 runs:
   using: "composite"
   steps:
     ########################### Checkout code ###########################
     - name: Checkout code
-      uses: actions/checkout@v4.1.1
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         fetch-depth: 2
 
     ########################### Install cosign ###########################
     # https://github.com/sigstore/cosign-installer
     - name: Install cosign
-      uses: sigstore/cosign-installer@main
-      with:
-        cosign-release: 'v1.8.0'
+      uses: sigstore/cosign-installer@v3.9.2
 
     ########################### Log into Dockerhub ###########################
     - name: Login to Docker Hub
-      uses: docker/login-action@v3.0.0
+      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
       with:
         username: ${{ inputs.docker_hub_username }}
         password: ${{ inputs.docker_hub_access_token }}
 
-    ########################### Sign built Docker image using cosign ###########################
+    ########################### Sign built Docker image using keyless cosign ###########################
     - name: Sign the published Docker image
       shell: bash
-      env:
-        COSIGN_PASSWORD: "${{ inputs.codesign_password }}"
       run: |
-        echo "${{ inputs.codesign_private_key }}" > cosign.key
-        for tag in ${{ inputs.docker_tags }}
-        do
-          IMAGE_NAME="${{ inputs.docker_hub_org }}/osctrl-${{ inputs.osctrl_component }}:$tag"
-          for digest in ${{ inputs.docker_image_digest }}
-          do
-            cosign sign --key cosign.key docker.io/$IMAGE_NAME@sha256:$digest
-          done
-        done
-        rm -f cosign.key
+        # Parse space-separated digests
+        IFS=' ' read -ra DIGESTS <<< "${{ inputs.docker_image_digests }}"
 
-    ########################### Verify signed image using cosign ###########################
+        for digest in "${DIGESTS[@]}"
+        do
+          IMAGE_NAME="${{ inputs.docker_hub_org }}/osctrl-${{ inputs.osctrl_component }}"
+          cosign sign --yes docker.io/$IMAGE_NAME@sha256:$digest
+        done
+
+    ########################### Verify signed image using keyless cosign ###########################
     - name: Verify the signed published Docker image
       shell: bash
       run: |
-        echo "${{ inputs.codesign_public_cert }}" > cosign.key
-        for tag in ${{ inputs.docker_tags }}
+        # Parse space-separated digests
+        IFS=' ' read -ra DIGESTS <<< "${{ inputs.docker_image_digests }}"
+
+        for digest in "${DIGESTS[@]}"
         do
-          IMAGE_NAME="${{ inputs.docker_hub_org }}/osctrl-${{ inputs.osctrl_component }}:$tag"
-          for digest in ${{ inputs.docker_image_digest }}
-          do
-            cosign verify --key cosign.key docker.io/$IMAGE_NAME@sha256:$digest
-          done
+          IMAGE_NAME="${{ inputs.docker_hub_org }}/osctrl-${{ inputs.osctrl_component }}"
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/.github/workflows/.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            docker.io/$IMAGE_NAME@sha256:$digest
         done
-        rm -f cosign.key

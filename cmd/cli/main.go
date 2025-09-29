@@ -3,17 +3,21 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/jmpsec/osctrl/pkg/backend"
 	"github.com/jmpsec/osctrl/pkg/carves"
 	"github.com/jmpsec/osctrl/pkg/config"
 	"github.com/jmpsec/osctrl/pkg/environments"
+	"github.com/jmpsec/osctrl/pkg/logging"
 	"github.com/jmpsec/osctrl/pkg/nodes"
 	"github.com/jmpsec/osctrl/pkg/queries"
 	"github.com/jmpsec/osctrl/pkg/settings"
 	"github.com/jmpsec/osctrl/pkg/tags"
 	"github.com/jmpsec/osctrl/pkg/users"
 	"github.com/jmpsec/osctrl/pkg/version"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/term"
 
@@ -33,6 +37,13 @@ const (
 	appDescription string = appUsage + ", a fast and efficient osquery management"
 	// JSON file with API token
 	defaultApiConfigFile = projectName + "-api.json"
+)
+
+// Build-time metadata (overridden via -ldflags "-X main.buildVersion=... -X main.buildCommit=... -X main.buildDate=...")
+var (
+	buildVersion = appVersion
+	buildCommit  = "unknown"
+	buildDate    = "unknown"
 )
 
 const (
@@ -69,6 +80,7 @@ var (
 	formatFlag       string
 	silentFlag       bool
 	insecureFlag     bool
+	verboseFlag      bool
 	writeApiFileFlag bool
 	dbConfigFile     string
 	apiConfigFile    string
@@ -76,6 +88,11 @@ var (
 
 // Initialization code
 func init() {
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
+		return filepath.Base(file) + ":" + strconv.Itoa(line)
+	}
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: logging.LoggerTimeFormat}).With().Caller().Logger()
 	// Initialize CLI flags
 	flags = []cli.Flag{
 		&cli.BoolFlag{
@@ -187,6 +204,13 @@ func init() {
 			Usage:       "Allow insecure server connections when using SSL",
 			Destination: &insecureFlag,
 		},
+		&cli.BoolFlag{
+			Name:        "verbose",
+			Aliases:     []string{"V"},
+			Value:       false,
+			Usage:       "Increase output verbosity for debugging",
+			Destination: &verboseFlag,
+		},
 		&cli.StringFlag{
 			Name:        "output-format",
 			Aliases:     []string{"o"},
@@ -225,16 +249,22 @@ func init() {
 							Usage:   "Password for the new user",
 						},
 						&cli.BoolFlag{
-							Name:    "admin",
-							Aliases: []string{"a"},
+							Name:    "global-admin",
+							Aliases: []string{"a", "admin"},
 							Hidden:  false,
-							Usage:   "Make this user an admin",
+							Usage:   "Make this user a global admin",
+						},
+						&cli.BoolFlag{
+							Name:    "service",
+							Aliases: []string{"s"},
+							Hidden:  false,
+							Usage:   "Make this user a service account",
 						},
 						&cli.StringFlag{
 							Name:    "environment",
 							Aliases: []string{"e"},
 							Value:   "",
-							Usage:   "Default environment for the new user",
+							Usage:   "Grant read access to this environment",
 						},
 						&cli.StringFlag{
 							Name:    "email",
@@ -275,8 +305,8 @@ func init() {
 							Usage:   "Full name to be used",
 						},
 						&cli.BoolFlag{
-							Name:    "admin",
-							Aliases: []string{"a"},
+							Name:    "global-admin",
+							Aliases: []string{"a", "admin"},
 							Hidden:  false,
 							Usage:   "Make this user an admin",
 						},
@@ -286,10 +316,22 @@ func init() {
 							Hidden:  false,
 							Usage:   "Make this user an non-admin",
 						},
+						&cli.BoolFlag{
+							Name:    "service",
+							Aliases: []string{"s"},
+							Hidden:  false,
+							Usage:   "Make this user a service account",
+						},
+						&cli.BoolFlag{
+							Name:    "non-service",
+							Aliases: []string{"S"},
+							Hidden:  false,
+							Usage:   "Make this user a non-service account",
+						},
 						&cli.StringFlag{
 							Name:    "environment",
 							Aliases: []string{"env"},
-							Usage:   "Default environment for this user",
+							Usage:   "Grant read access to this environment",
 						},
 					},
 					Action: cliWrapper(editUser),
@@ -475,6 +517,30 @@ func init() {
 							Value:   "",
 							Usage:   "Certificate file to be read",
 						},
+						&cli.BoolFlag{
+							Name:    "config",
+							Aliases: []string{"c"},
+							Value:   true,
+							Usage:   "Generate flags for osquery's config plugin",
+						},
+						&cli.BoolFlag{
+							Name:    "logger",
+							Aliases: []string{"l"},
+							Value:   true,
+							Usage:   "Generate flags for osquery's logger plugin",
+						},
+						&cli.BoolFlag{
+							Name:    "query",
+							Aliases: []string{"q"},
+							Value:   true,
+							Usage:   "Generate flags for osquery's on-demand query plugin",
+						},
+						&cli.BoolFlag{
+							Name:    "carve",
+							Aliases: []string{"C"},
+							Value:   true,
+							Usage:   "Generate flags for osquery's file carve plugin",
+						},
 					},
 					Action: cliWrapper(addEnvironment),
 				},
@@ -540,6 +606,26 @@ func init() {
 							Name:    "pkg",
 							Aliases: []string{"pkg-package"},
 							Usage:   "PKG package to be updated",
+						},
+						&cli.BoolFlag{
+							Name:    "config-plugin",
+							Value:   true,
+							Usage:   "Generate flags for osquery's config plugin",
+						},
+						&cli.BoolFlag{
+							Name:    "logger-plugin",
+							Value:   true,
+							Usage:   "Generate flags for osquery's logger plugin",
+						},
+						&cli.BoolFlag{
+							Name:    "query-plugin",
+							Value:   true,
+							Usage:   "Generate flags for osquery's on-demand query plugin",
+						},
+						&cli.BoolFlag{
+							Name:    "carve-plugin",
+							Value:   true,
+							Usage:   "Generate flags for osquery's file carve plugin",
 						},
 					},
 					Action: cliWrapper(updateEnvironment),
@@ -829,7 +915,33 @@ func init() {
 							Name:    "new-flags",
 							Aliases: []string{"f"},
 							Usage:   "Generate new enroll flags and save them for a TLS environment",
-							Action:  cliWrapper(newFlagsEnvironment),
+							Flags: []cli.Flag{
+								&cli.BoolFlag{
+									Name:    "config",
+									Aliases: []string{"c"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's config plugin",
+								},
+								&cli.BoolFlag{
+									Name:    "logger",
+									Aliases: []string{"l"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's logger plugin",
+								},
+								&cli.BoolFlag{
+									Name:    "query",
+									Aliases: []string{"q"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's on-demand query plugin",
+								},
+								&cli.BoolFlag{
+									Name:    "carve",
+									Aliases: []string{"C"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's file carve plugin",
+								},
+							},
+							Action: cliWrapper(newFlagsEnvironment),
 						},
 						{
 							Name:    "gen-flags",
@@ -845,6 +957,30 @@ func init() {
 									Name:    "secret",
 									Aliases: []string{"s"},
 									Usage:   "Secret file path to be used",
+								},
+								&cli.BoolFlag{
+									Name:    "config",
+									Aliases: []string{"c"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's config plugin",
+								},
+								&cli.BoolFlag{
+									Name:    "logger",
+									Aliases: []string{"l"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's logger plugin",
+								},
+								&cli.BoolFlag{
+									Name:    "query",
+									Aliases: []string{"q"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's on-demand query plugin",
+								},
+								&cli.BoolFlag{
+									Name:    "carve",
+									Aliases: []string{"C"},
+									Value:   true,
+									Usage:   "Generate flags for osquery's file carve plugin",
 								},
 							},
 							Action: cliWrapper(genFlagsEnvironment),
@@ -1142,15 +1278,25 @@ func init() {
 							Usage:   "Node UUID to be tagged",
 						},
 						&cli.StringFlag{
+							Name:    "env",
+							Aliases: []string{"e"},
+							Usage:   "Environment to be used",
+						},
+						&cli.StringFlag{
 							Name:    "name",
-							Aliases: []string{"n"},
+							Aliases: []string{"n", "tag", "tag-value"},
 							Usage:   "Tag name to be used. It will be created if does not exist",
 						},
 						&cli.StringFlag{
 							Name:    "tag-type",
 							Aliases: []string{"type"},
-							Value:   "custom",
-							Usage:   "Tag type to be used. It can be 'env', 'uuid', 'localname' and 'custom'",
+							Value:   "",
+							Usage:   "Tag type to be used. It can be 'env', 'uuid', 'platform', 'localname', 'tag' and 'custom'",
+						},
+						&cli.StringFlag{
+							Name:    "custom",
+							Aliases: []string{"tag-custom", "c"},
+							Usage:   "Custom tag value to be used, if tag-type is set to 'custom'",
 						},
 					},
 					Action: cliWrapper(tagNode),
@@ -1204,6 +1350,19 @@ func init() {
 						},
 					},
 					Action: cliWrapper(showNode),
+				},
+				{
+					Name:    "lookup",
+					Aliases: []string{"f"},
+					Usage:   "Lookup existing nodes by identifier (UUID, hostname or localname)",
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name:    "identifier",
+							Aliases: []string{"id", "i"},
+							Usage:   "Node identifier to be looked up (UUID, hostname or localname)",
+						},
+					},
+					Action: cliWrapper(lookupNode),
 				},
 			},
 		},
@@ -1283,7 +1442,22 @@ func init() {
 						&cli.StringFlag{
 							Name:    "uuid",
 							Aliases: []string{"u"},
-							Usage:   "Node UUID to be used",
+							Usage:   "Node UUID(s) to be used. Comma separated for multiple values",
+						},
+						&cli.StringFlag{
+							Name:    "host",
+							Aliases: []string{"hostname", "H"},
+							Usage:   "Node hostname(s) to be used. Comma separated for multiple values",
+						},
+						&cli.StringFlag{
+							Name:    "platform",
+							Aliases: []string{"p"},
+							Usage:   "Node platform(s) to be used. Comma separated for multiple values",
+						},
+						&cli.StringFlag{
+							Name:    "tag",
+							Aliases: []string{"t"},
+							Usage:   "Tag(s) to be used. Comma separated for multiple values",
 						},
 						&cli.BoolFlag{
 							Name:    "hidden",
@@ -1427,7 +1601,22 @@ func init() {
 						&cli.StringFlag{
 							Name:    "uuid",
 							Aliases: []string{"u"},
-							Usage:   "Node UUID to be used",
+							Usage:   "Node UUID(s) to be used. Comma separated for multiple values",
+						},
+						&cli.StringFlag{
+							Name:    "host",
+							Aliases: []string{"hostname", "H"},
+							Usage:   "Node hostname(s) to be used. Comma separated for multiple values",
+						},
+						&cli.StringFlag{
+							Name:    "platform",
+							Aliases: []string{"p"},
+							Usage:   "Node platform(s) to be used. Comma separated for multiple values",
+						},
+						&cli.StringFlag{
+							Name:    "tag",
+							Aliases: []string{"t"},
+							Usage:   "Tag(s) to be used. Comma separated for multiple values",
 						},
 						&cli.IntFlag{
 							Name:    "expiration",
@@ -1511,9 +1700,9 @@ func init() {
 							Usage:   "Tage name to be used",
 						},
 						&cli.StringFlag{
-							Name:    "env-uuid",
+							Name:    "env",
 							Aliases: []string{"e"},
-							Usage:   "Environment UUID to be used",
+							Usage:   "Environment UUID or name to be used",
 						},
 						&cli.StringFlag{
 							Name:    "icon",
@@ -1535,7 +1724,12 @@ func init() {
 							Name:    "tag-type",
 							Aliases: []string{"t", "type"},
 							Value:   "custom",
-							Usage:   "Tag type to be used. It can be 'env', 'uuid', 'platform', 'localname' and 'custom'",
+							Usage:   "Tag type to be used. It can be 'env', 'uuid', 'platform', 'localname', 'tag' and 'custom'",
+						},
+						&cli.StringFlag{
+							Name:    "tag-custom",
+							Aliases: []string{"C", "custom"},
+							Usage:   "Tag custom value to be used. It is only used if tag-type is set to 'custom'",
 						},
 					},
 					Action: cliWrapper(addTag),
@@ -1573,7 +1767,12 @@ func init() {
 						&cli.StringFlag{
 							Name:    "tag-type",
 							Aliases: []string{"t", "type"},
-							Usage:   "Tag type to be used. It can be 'env', 'uuid', 'platform', 'localname' and 'custom'",
+							Usage:   "Tag type to be used. It can be 'env', 'uuid', 'platform', 'localname', 'tag' and 'custom'",
+						},
+						&cli.StringFlag{
+							Name:    "tag-custom",
+							Aliases: []string{"C", "custom"},
+							Usage:   "Tag custom value to be used. It is only used if tag-type is set to 'custom'",
 						},
 					},
 					Action: cliWrapper(editTag),
@@ -1684,16 +1883,20 @@ func init() {
 
 // Action for the DB check
 func checkDB(c *cli.Context) error {
+	if verboseFlag {
+		showFlags(c)
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
 	if dbFlag && dbConfigFile != "" {
 		// Initialize backend
 		db, err = backend.CreateDBManagerFile(dbConfigFile)
 		if err != nil {
-			return fmt.Errorf("Failed to create backend - %w", err)
+			return fmt.Errorf("failed to create backend - %w", err)
 		}
 	} else {
 		db, err = backend.CreateDBManager(dbConfig)
 		if err != nil {
-			return fmt.Errorf("Failed to create backend - %w", err)
+			return fmt.Errorf("failed to create backend - %w", err)
 		}
 	}
 	if err := db.Check(); err != nil {
@@ -1708,6 +1911,10 @@ func checkDB(c *cli.Context) error {
 
 // Action for the API check
 func checkAPI(c *cli.Context) error {
+	if verboseFlag {
+		showFlags(c)
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
 	if apiFlag {
 		if apiConfigFile != "" {
 			apiConfig, err = loadAPIConfiguration(apiConfigFile)
@@ -1717,6 +1924,9 @@ func checkAPI(c *cli.Context) error {
 		}
 		// Initialize API
 		osctrlAPI = CreateAPI(apiConfig, insecureFlag)
+		if err := osctrlAPI.CheckAPI(); err != nil {
+			return fmt.Errorf("error checking API - %w", err)
+		}
 	}
 	if !silentFlag {
 		fmt.Println("✅ API check successful")
@@ -1727,6 +1937,10 @@ func checkAPI(c *cli.Context) error {
 
 // Action for the API login
 func loginAPI(c *cli.Context) error {
+	if verboseFlag {
+		showFlags(c)
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
 	// API URL can is needed
 	if apiConfig.URL == "" {
 		fmt.Println("❌ API URL is required")
@@ -1772,9 +1986,52 @@ func loginAPI(c *cli.Context) error {
 	return nil
 }
 
+func showFlags(c *cli.Context) {
+	fmt.Println("=== Flag Values ===")
+	// Get all defined flags
+	for _, flag := range c.App.Flags {
+		// For each flag type, extract and print its value
+		switch f := flag.(type) {
+		case *cli.StringFlag:
+			fmt.Printf("  %s: %q\n", f.Names()[0], c.String(f.Names()[0]))
+		case *cli.BoolFlag:
+			fmt.Printf("  %s: %t\n", f.Names()[0], c.Bool(f.Names()[0]))
+		case *cli.IntFlag:
+			fmt.Printf("  %s: %d\n", f.Names()[0], c.Int(f.Names()[0]))
+		case *cli.Int64Flag:
+			fmt.Printf("  %s: %d\n", f.Names()[0], c.Int64(f.Names()[0]))
+		case *cli.Float64Flag:
+			fmt.Printf("  %s: %f\n", f.Names()[0], c.Float64(f.Names()[0]))
+		}
+	}
+	// Show command-specific flags if we're in a command
+	if c.Command != nil && len(c.Command.Flags) > 0 {
+		fmt.Printf("=== Command '%s' Flag Values ===\n", c.Command.Name)
+		for _, flag := range c.Command.Flags {
+			switch f := flag.(type) {
+			case *cli.StringFlag:
+				fmt.Printf("  %s: %q\n", f.Names()[0], c.String(f.Names()[0]))
+			case *cli.BoolFlag:
+				fmt.Printf("  %s: %t\n", f.Names()[0], c.Bool(f.Names()[0]))
+			case *cli.IntFlag:
+				fmt.Printf("  %s: %d\n", f.Names()[0], c.Int(f.Names()[0]))
+			case *cli.Int64Flag:
+				fmt.Printf("  %s: %d\n", f.Names()[0], c.Int64(f.Names()[0]))
+			case *cli.Float64Flag:
+				fmt.Printf("  %s: %f\n", f.Names()[0], c.Float64(f.Names()[0]))
+			}
+		}
+	}
+	fmt.Println("==================")
+}
+
 // Function to wrap actions
 func cliWrapper(action func(*cli.Context) error) func(*cli.Context) error {
 	return func(c *cli.Context) error {
+		if verboseFlag {
+			showFlags(c)
+			zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		}
 		// Verify if format is correct
 		if !formats[formatFlag] {
 			return fmt.Errorf("invalid format %s", formatFlag)
@@ -1783,41 +2040,52 @@ func cliWrapper(action func(*cli.Context) error) func(*cli.Context) error {
 		if dbFlag {
 			// Initialize backend
 			if dbConfigFile != "" {
+				log.Debug().Msg("Initializing DB from file")
 				db, err = backend.CreateDBManagerFile(dbConfigFile)
 				if err != nil {
 					return fmt.Errorf("CreateDBManagerFile - %w", err)
 				}
 			} else {
+				log.Debug().Msg("Creating DB manager from config")
 				db, err = backend.CreateDBManager(dbConfig)
 				if err != nil {
 					return fmt.Errorf("CreateDBManager - %w", err)
 				}
 			}
 			// Initialize users
+			log.Debug().Msg("Creating user manager")
 			adminUsers = users.CreateUserManager(db.Conn, &config.JSONConfigurationJWT{JWTSecret: appName})
 			// Initialize environment
+			log.Debug().Msg("Creating environment manager")
 			envs = environments.CreateEnvironment(db.Conn)
 			// Initialize settings
+			log.Debug().Msg("Creating settings manager")
 			settingsmgr = settings.NewSettings(db.Conn)
 			// Initialize nodes
+			log.Debug().Msg("Creating nodes manager")
 			nodesmgr = nodes.CreateNodes(db.Conn)
 			// Initialize queries
+			log.Debug().Msg("Creating queries manager")
 			queriesmgr = queries.CreateQueries(db.Conn)
 			// Initialize carves
+			log.Debug().Msg("Creating file carves manager")
 			filecarves = carves.CreateFileCarves(db.Conn, config.CarverDB, nil)
 			// Initialize tags
+			log.Debug().Msg("Creating tags manager")
 			tagsmgr = tags.CreateTagManager(db.Conn)
 			// Execute action
 			return action(c)
 		}
 		if apiFlag {
 			if apiConfigFile != "" {
+				log.Debug().Msg("Loading API configuration from file")
 				apiConfig, err = loadAPIConfiguration(apiConfigFile)
 				if err != nil {
 					return fmt.Errorf("loadAPIConfiguration - %w", err)
 				}
 			}
 			// Initialize API
+			log.Debug().Msg("Creating API client")
 			osctrlAPI = CreateAPI(apiConfig, insecureFlag)
 			// Execute action
 			return action(c)
@@ -1844,12 +2112,35 @@ func main() {
 	app = cli.NewApp()
 	app.Name = appName
 	app.Usage = appUsage
-	app.Version = appVersion
+	app.Version = buildVersion
+	cli.HelpFlag = &cli.BoolFlag{
+		Name:    "help",
+		Aliases: []string{"h"},
+		Usage:   "Show help",
+	}
 	app.Description = appDescription
 	app.Flags = flags
+	// Customize version output (supports `--version` and `version` command)
+	cli.VersionPrinter = func(c *cli.Context) {
+		fmt.Printf("%s version=%s commit=%s date=%s\n", appName, buildVersion, buildCommit, buildDate)
+	}
+	// Add -v alias to the global --version flag
+	cli.VersionFlag = &cli.BoolFlag{
+		Name:    "version",
+		Aliases: []string{"v"},
+		Usage:   "Print version information",
+	}
+	// Assign commands
 	app.Commands = commands
-	app.Action = cliAction
+	// Start service only for default action; version/help won't trigger this
+	app.Action = func(c *cli.Context) error {
+		if err := cliAction(c); err != nil {
+			return err
+		}
+		return nil
+	}
+	// Run the app
 	if err := app.Run(os.Args); err != nil {
-		log.Fatal().Msgf("❌ Failed to execute - %v", err)
+		log.Fatal().Msgf("❌ %v", err)
 	}
 }

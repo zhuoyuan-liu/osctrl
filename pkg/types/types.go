@@ -8,6 +8,13 @@ type OsqueryTable struct {
 	Filter    string
 }
 
+// BuildMetadata to show build metadata
+type BuildMetadata struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
 // FlagsRequest to retrieve flags
 type FlagsRequest struct {
 	Secret     string `json:"secret"`
@@ -42,21 +49,24 @@ type ApiDistributedQueryRequest struct {
 	Platforms    []string `json:"platform_list"`
 	Environments []string `json:"environment_list"`
 	Hosts        []string `json:"host_list"`
+	Tags         []string `json:"tag_list"`
 	Query        string   `json:"query"`
+	Path         string   `json:"path"`
 	Hidden       bool     `json:"hidden"`
 	ExpHours     int      `json:"exp_hours"`
-}
-
-// ApiDistributedCarveRequest to receive query requests
-type ApiDistributedCarveRequest struct {
-	UUID     string `json:"uuid"`
-	Path     string `json:"path"`
-	ExpHours int    `json:"exp_hours"`
 }
 
 // ApiNodeGenericRequest to receive generic node requests
 type ApiNodeGenericRequest struct {
 	UUID string `json:"uuid"`
+}
+
+// ApiNodeTagRequest to receive tag node requests
+type ApiNodeTagRequest struct {
+	UUID   string `json:"uuid"`
+	Tag    string `json:"tag"`
+	Type   uint   `json:"type"`
+	Custom string `json:"custom"`
 }
 
 // ApiLoginRequest to receive login requests
@@ -106,6 +116,26 @@ type ApiTagsRequest struct {
 	Description string `json:"description"`
 	Color       string `json:"color"`
 	Icon        string `json:"icon"`
-	EnvUUID     string `json:"env_uuid"`
+	Env         string `json:"env"`
 	TagType     uint   `json:"tagtype"`
+	Custom      string `json:"custom"`
+}
+
+// ApiLookupRequest to receive lookup requests
+type ApiLookupRequest struct {
+	Identifier string `json:"identifier"`
+}
+
+// ApiUserRequest to receive user requests
+type ApiUserRequest struct {
+	Username     string   `json:"username"`
+	Password     string   `json:"password"`
+	Email        string   `json:"email"`
+	Fullname     string   `json:"fullname"`
+	Admin        bool     `json:"admin"`
+	NotAdmin     bool     `json:"not_admin"`
+	Service      bool     `json:"service"`
+	NotService   bool     `json:"not_service"`
+	API          bool     `json:"api"`
+	Environments []string `json:"environments"`
 }

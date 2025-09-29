@@ -2,6 +2,7 @@
 <html lang="en">
 
   {{ $metadata := .Metadata }}
+  {{ $leftmeta := .LeftMetadata }}
 
   {{ template "page-head" . }}
 
@@ -178,7 +179,7 @@
 
       </main>
 
-      {{ if eq $metadata.Level "admin" }}
+      {{ if $metadata.Admin }}
         {{ template "page-aside-right" . }}
       {{ end }}
 

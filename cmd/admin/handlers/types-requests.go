@@ -18,19 +18,10 @@ type DistributedQueryRequest struct {
 	Platforms    []string `json:"platform_list"`
 	UUIDs        []string `json:"uuid_list"`
 	Hosts        []string `json:"host_list"`
+	Tags         []string `json:"tag_list"`
 	Save         bool     `json:"save"`
 	Name         string   `json:"name"`
 	Query        string   `json:"query"`
-	ExpHours     int      `json:"exp_hours"`
-}
-
-// DistributedCarveRequest to receive carve requests
-type DistributedCarveRequest struct {
-	CSRFToken    string   `json:"csrftoken"`
-	Environments []string `json:"environment_list"`
-	Platforms    []string `json:"platform_list"`
-	UUIDs        []string `json:"uuid_list"`
-	Hosts        []string `json:"host_list"`
 	Path         string   `json:"path"`
 	ExpHours     int      `json:"exp_hours"`
 }
@@ -123,6 +114,7 @@ type UsersRequest struct {
 	NewPassword  string   `json:"new_password"`
 	Token        bool     `json:"token"`
 	Admin        bool     `json:"admin"`
+	Service      bool     `json:"service"`
 	Environments []string `json:"environments"`
 }
 
@@ -136,6 +128,7 @@ type TagsRequest struct {
 	Icon        string `json:"icon"`
 	Environment string `json:"environment"`
 	TagType     uint   `json:"tagtype"`
+	Custom      string `json:"custom"`
 }
 
 // TagNodesRequest to receive a tag for nodes

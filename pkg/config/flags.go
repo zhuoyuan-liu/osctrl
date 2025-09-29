@@ -12,9 +12,9 @@ import (
 // Default values
 const (
 	// Default timeout to attempt backend reconnect
-	defaultBackendRetryTimeout int = 7
+	defaultBackendRetryTimeout int = 10
 	// Default timeout to attempt redis reconnect
-	defaultRedisRetryTimeout int = 7
+	defaultRedisRetryTimeout int = 10
 )
 
 // osquery
@@ -41,6 +41,8 @@ const (
 	defDBConfigurationFile string = "config/db.json"
 	// Default redis configuration file
 	defRedisConfigurationFile string = "config/redis.json"
+	// Default db filepath for sqlite
+	defSQLiteDBFile string = "./osctrl.db"
 )
 
 // ServiceFlagParams stores flag values for the each service
@@ -80,10 +82,8 @@ type ServiceFlagParams struct {
 	// JWT configuration file
 	JWTConfigFile string
 
-	// osquery version to use
-	OsqueryVersion string
-	// JSON file with osquery tables data
-	OsqueryTablesFile string
+	// osquery configuration values
+	OsqueryConfigValues OsqueryConfiguration
 
 	// SAML configuration file
 	SAMLConfigFile string
@@ -98,6 +98,9 @@ type ServiceFlagParams struct {
 
 	// Debug HTTP configuration values
 	DebugHTTPValues DebugHTTPConfiguration
+
+	// osctrld configuration values
+	OsctrldConfigValues OsctrldConfiguration
 
 	// Service configuration values
 	ConfigValues JSONConfigurationService
@@ -129,6 +132,7 @@ func InitTLSFlags(params *ServiceFlagParams) []cli.Flag {
 	allFlags = append(allFlags, initRedisFlags(params)...)
 	allFlags = append(allFlags, initDBFlags(params)...)
 	allFlags = append(allFlags, initTLSSecurityFlags(params)...)
+	allFlags = append(allFlags, initOsctrldFlags(params)...)
 	allFlags = append(allFlags, initCarverFlags(params, ServiceTLS)...)
 	allFlags = append(allFlags, initS3LoggingFlags(params)...)
 	allFlags = append(allFlags, initKafkaFlags(params)...)
@@ -146,6 +150,7 @@ func InitAdminFlags(params *ServiceFlagParams) []cli.Flag {
 	allFlags = append(allFlags, initRedisFlags(params)...)
 	allFlags = append(allFlags, initDBFlags(params)...)
 	allFlags = append(allFlags, initTLSSecurityFlags(params)...)
+	allFlags = append(allFlags, initOsctrldFlags(params)...)
 	allFlags = append(allFlags, initCarverFlags(params, ServiceAdmin)...)
 	allFlags = append(allFlags, initS3LoggingFlags(params)...)
 	allFlags = append(allFlags, initJWTFlags(params)...)
@@ -419,6 +424,13 @@ func initDBFlags(params *ServiceFlagParams) []cli.Flag {
 			Destination: &params.DBConfigFile,
 		},
 		&cli.StringFlag{
+			Name:        "db-type",
+			Value:       "postgres",
+			Usage:       "Type of backend to be used",
+			EnvVars:     []string{"DB_TYPE"},
+			Destination: &params.DBConfigValues.Type,
+		},
+		&cli.StringFlag{
 			Name:        "db-host",
 			Value:       "127.0.0.1",
 			Usage:       "Backend host to be connected to",
@@ -487,6 +499,13 @@ func initDBFlags(params *ServiceFlagParams) []cli.Flag {
 			Usage:       "Time in seconds to retry the connection to the database, if set to 0 the service will stop if the connection fails",
 			EnvVars:     []string{"DB_CONN_RETRY"},
 			Destination: &params.DBConfigValues.ConnRetry,
+		},
+		&cli.StringFlag{
+			Name:        "db-filepath",
+			Value:       defSQLiteDBFile,
+			Usage:       "File path to the SQLite database, only used when type is sqlite",
+			EnvVars:     []string{"DB_SQLITE_FILEPATH"},
+			Destination: &params.DBConfigValues.FilePath,
 		},
 	}
 }
@@ -700,14 +719,42 @@ func initOsqueryFlags(params *ServiceFlagParams) []cli.Flag {
 			Value:       defOsqueryTablesVersion,
 			Usage:       "Version of osquery to be used",
 			EnvVars:     []string{"OSQUERY_VERSION"},
-			Destination: &params.OsqueryVersion,
+			Destination: &params.OsqueryConfigValues.Version,
 		},
 		&cli.StringFlag{
 			Name:        "osquery-tables-file",
 			Value:       defOsqueryTablesFile,
 			Usage:       "File with the osquery tables to be used",
 			EnvVars:     []string{"OSQUERY_TABLES"},
-			Destination: &params.OsqueryTablesFile,
+			Destination: &params.OsqueryConfigValues.TablesFile,
+		},
+		&cli.BoolFlag{
+			Name:        "osquery-logger",
+			Value:       true,
+			Usage:       "Enable remote tls logger for osquery",
+			EnvVars:     []string{"OSQUERY_LOGGER"},
+			Destination: &params.OsqueryConfigValues.Logger,
+		},
+		&cli.BoolFlag{
+			Name:        "osquery-config",
+			Value:       true,
+			Usage:       "Enable remote tls config for osquery",
+			EnvVars:     []string{"OSQUERY_CONFIG"},
+			Destination: &params.OsqueryConfigValues.Config,
+		},
+		&cli.BoolFlag{
+			Name:        "osquery-query",
+			Value:       true,
+			Usage:       "Enable remote tls queries for osquery",
+			EnvVars:     []string{"OSQUERY_QUERY"},
+			Destination: &params.OsqueryConfigValues.Query,
+		},
+		&cli.BoolFlag{
+			Name:        "osquery-carve",
+			Value:       true,
+			Usage:       "Enable remote tls carver for osquery",
+			EnvVars:     []string{"OSQUERY_CARVE"},
+			Destination: &params.OsqueryConfigValues.Carve,
 		},
 	}
 }
@@ -785,6 +832,19 @@ func initDebugFlags(params *ServiceFlagParams, service string) []cli.Flag {
 			Usage:       "Show body of the HTTP requests when HTTP Debug mode is enabled",
 			EnvVars:     []string{"HTTP_DEBUG_SHOW_BODY"},
 			Destination: &params.DebugHTTPValues.ShowBody,
+		},
+	}
+}
+
+// initOsctrldFlags initializes all the flags needed for the osctrld service
+func initOsctrldFlags(params *ServiceFlagParams) []cli.Flag {
+	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:        "enable-osctrld",
+			Value:       false,
+			Usage:       "Enable osctrld endpoints and functionality.",
+			EnvVars:     []string{"OSCTRLD"},
+			Destination: &params.OsctrldConfigValues.Enabled,
 		},
 	}
 }

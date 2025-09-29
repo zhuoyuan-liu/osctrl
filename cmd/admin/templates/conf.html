@@ -2,6 +2,7 @@
 <html lang="en">
 
   {{ $metadata := .Metadata }}
+  {{ $leftmeta := .LeftMetadata }}
 
   {{ template "page-head" . }}
 
@@ -19,11 +20,12 @@
 
           <div class="animated fadeIn">
 
+          {{ if $leftmeta.OsqueryValues.Config }}
             <div class="card mt-2">
               <div id="intervals_header" class="card-header">
-                <i class="far fa-clock"></i> Intervals for environment <b>{{ .Environment.Name }}</b>
+                <i class="far fa-clock"></i> Intervals for environment <b>{{ $leftmeta.EnvName }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button id="intervals_save" class="btn btn-sm btn-block btn-dark"
                       data-tooltip="true" data-placement="bottom" title="Save Intervals" onclick="saveIntervals();">
@@ -74,9 +76,9 @@
             <!-- Options -->
             <div class="card mt-2">
               <div id="options_header" class="card-header">
-                <i class="far fa-file-alt"></i> osquery options for environment <b>{{ .Environment.Name }}</b>
+                <i class="far fa-file-alt"></i> osquery options for environment <b>{{ $leftmeta.EnvName }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button class="btn btn-sm btn-info"
                       data-tooltip="true" data-placement="bottom" title="Documentation" onclick="javascript:window.open('https://osquery.readthedocs.io/en/stable/deployment/configuration/#options', '_blank');">
@@ -114,7 +116,7 @@
               <div id="schedule_header" class="card-header">
                 <i class="far fa-file-alt"></i> Scheduled queries for environment <b>{{ .Environment.Name }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button class="btn btn-sm btn-info"
                       data-tooltip="true" data-placement="bottom" title="Documentation" onclick="javascript:window.open('https://osquery.readthedocs.io/en/stable/deployment/configuration/#schedule', '_blank');">
@@ -152,7 +154,7 @@
               <div id="packs_header" class="card-header">
                 <i class="far fa-file-alt"></i> Query packs for environment <b>{{ .Environment.Name }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button class="btn btn-sm btn-info"
                       data-tooltip="true" data-placement="bottom" title="Documentation" onclick="javascript:window.open('https://osquery.readthedocs.io/en/stable/deployment/configuration/#packs', '_blank');">
@@ -186,7 +188,7 @@
               <div id="atc_header" class="card-header">
                 <i class="far fa-file-alt"></i> Automatic Table Construction for environment <b>{{ .Environment.Name }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button class="btn btn-sm btn-info"
                       data-tooltip="true" data-placement="bottom" title="Documentation" onclick="javascript:window.open('https://osquery.readthedocs.io/en/stable/deployment/configuration/#automatic-table-construction', '_blank');">
@@ -220,7 +222,7 @@
               <div id="decorators_header" class="card-header">
                 <i class="far fa-file-alt"></i> Decorators for environment <b>{{ .Environment.Name }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button class="btn btn-sm btn-info"
                       data-tooltip="true" data-placement="bottom" title="Documentation" onclick="javascript:window.open('https://osquery.readthedocs.io/en/stable/deployment/configuration/#decorator-queries', '_blank');">
@@ -254,7 +256,7 @@
               <div id="configuration_header" class="card-header">
                 <i class="far fa-file-alt"></i> Fully rendered osquery configuration for environment <b>{{ .Environment.Name }}</b>
                 <div class="card-header-actions">
-                {{ if eq $metadata.Level "admin" }}
+                {{ if $metadata.Admin }}
                   <div class="card-header-action">
                     <button class="btn btn-sm btn-info"
                       data-tooltip="true" data-placement="bottom" title="Documentation" onclick="javascript:window.open('https://osquery.readthedocs.io/en/stable/deployment/configuration/', '_blank');">
@@ -283,13 +285,21 @@
               </div>
             </div>
 
+          {{ else }}
+            <div class="card mt-2">
+              <div class="alert alert-danger" role="alert">
+                <h4 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> osquery configuration not available</h4>
+              </div>
+            </div>
+          {{ end }}
+
           {{ template "page-modals" . }}
 
         </div>
 
       </main>
 
-      {{ if eq $metadata.Level "admin" }}
+      {{ if $metadata.Admin }}
         {{ template "page-aside-right" . }}
       {{ end }}
 

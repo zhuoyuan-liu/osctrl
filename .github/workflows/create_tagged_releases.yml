@@ -2,13 +2,17 @@ name: Create new osctrl release
 
 on:
   push:
-    branches: [$default-branch]
+    branches: [main]
     # Publish semver tags as releases.
     tags: ["v*.*.*"]
 
+permissions:
+  contents: read
+  id-token: write
+
 env:
-  GOLANG_VERSION: 1.24.1
-  OSQUERY_VERSION: 5.16.0
+  GOLANG_VERSION: 1.24.3
+  OSQUERY_VERSION: 5.19.0
 
 jobs:
   build_and_test:
@@ -21,7 +25,7 @@ jobs:
     steps:
       ########################### Checkout code ###########################
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
 
@@ -73,7 +77,7 @@ jobs:
     steps:
       ########################### Checkout code ###########################
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
 
@@ -96,7 +100,7 @@ jobs:
           osctrl_component: ${{ matrix.components }}
           commit_sha: ${{ steps.vars.outputs.sha_short }}
           osquery_version: ${{ env.OSQUERY_VERSION }}
-          release_version_tag: ${{ steps.vars.outputs.branch }}
+          release_version_tag: ${{ steps.vars.outputs.RELEASE_VERSION }}
 
   create_docker_images:
     needs: [build_and_test]
@@ -109,7 +113,7 @@ jobs:
     steps:
       ########################### Checkout code ###########################
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
 
@@ -148,13 +152,13 @@ jobs:
     steps:
       ########################### Checkout code ###########################
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
 
       ########################### Get digests from build ###########################
       - name: Download digests
-        uses: actions/download-artifact@v4.1.7
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           pattern: digests-osctrl-${{ matrix.components }}-*
           merge-multiple: true
@@ -162,12 +166,12 @@ jobs:
 
       ########################### Setup Docker ###########################
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.0.0
+        uses: docker/setup-buildx-action@af1b253b8dc984466d22633f04ef341c1520ed2f # v3.11.1
 
       ########################### Add meta data for containers ###########################
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: ${{ secrets.DOCKER_HUB_ORG }}/osctrl-${{ matrix.components }}
           labels: |
@@ -178,7 +182,7 @@ jobs:
 
       ########################### Log into Dockerhub ###########################
       - name: Login to Docker Hub
-        uses: docker/login-action@v3.0.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -204,16 +208,12 @@ jobs:
         with:
           #### Docker vars ####
           osctrl_component: ${{ matrix.components }}
-          docker_tags: ${{ steps.docker_vars.outputs.tags }}
-          docker_image_digests: ${{ steps.digests.outputs.digests }}
+          docker_tags: ${{ steps.meta.outputs.tags }}
+          docker_image_digests: ${{ steps.docker_vars.outputs.digests }}
           #### Dockerhub creds ####
           docker_hub_org: ${{ secrets.DOCKER_HUB_ORG }}
           docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
           docker_hub_access_token: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-          #### Codesign secrets ####
-          codesign_password: ${{ secrets.COSIGN_PASSWORD }}
-          codesign_private_key: ${{ secrets.COSIGN_PRIVATE }}
-          codesign_public_cert: ${{ secrets.COSIGN_PUBLIC }}
 
       ########################### Inspect new image ###########################
       - name: Inspect image
@@ -223,15 +223,25 @@ jobs:
   create_release:
     needs: [build_and_test, create_deb_packages, push_docker_images]
     runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     strategy:
       matrix:
         components: ["tls", "admin", "api", "cli"]
-        goos: ["linux"]
+        goos: ["linux", "darwin", "windows"]
         goarch: ["amd64", "arm64"]
+        exclude:
+          - goos: "windows"
+            components: "tls"
+          - goos: "windows"
+            components: "admin"
+          - goos: "windows"
+            components: "api"
     steps:
       ########################### Checkout code ###########################
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
 

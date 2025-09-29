@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/jmpsec/osctrl/cmd/admin/sessions"
+	"github.com/jmpsec/osctrl/pkg/handlers"
 	"github.com/jmpsec/osctrl/pkg/nodes"
 	"github.com/jmpsec/osctrl/pkg/queries"
 	"github.com/jmpsec/osctrl/pkg/settings"
@@ -98,7 +99,7 @@ func (h *HandlersAdmin) QueryRunPOSTHandler(w http.ResponseWriter, r *http.Reque
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions for query
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.QueryLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -125,87 +126,31 @@ func (h *HandlersAdmin) QueryRunPOSTHandler(w http.ResponseWriter, r *http.Reque
 	if q.ExpHours == 0 {
 		expTime = time.Time{}
 	}
-	newQuery := newQueryReady(ctx[sessions.CtxUser], q.Query, expTime, env.ID)
-	if err := h.Queries.Create(newQuery); err != nil {
+	newQuery := newQueryReady(ctx[sessions.CtxUser], q.Query, expTime, env.ID, q)
+	if err := h.Queries.Create(&newQuery); err != nil {
 		adminErrorResponse(w, "error creating query", http.StatusInternalServerError, err)
 		return
 	}
-	// Get the query id
-	newQuery, err = h.Queries.Get(newQuery.Name, env.ID)
+	// Prepare data for the handler code
+	data := handlers.ProcessingQuery{
+		Envs:          q.Environments,
+		Platforms:     q.Platforms,
+		UUIDs:         q.UUIDs,
+		Hosts:         q.Hosts,
+		Tags:          q.Tags,
+		EnvID:         env.ID,
+		InactiveHours: h.Settings.InactiveHours(settings.NoEnvironmentID),
+	}
+	manager := handlers.Managers{
+		Nodes: h.Nodes,
+		Envs:  h.Envs,
+		Tags:  h.Tags,
+	}
+	targetNodesID, err := handlers.CreateQueryCarve(data, manager, newQuery)
 	if err != nil {
 		adminErrorResponse(w, "error creating query", http.StatusInternalServerError, err)
 		return
 	}
-	// List all the nodes that match the query
-	var expected []uint
-	targetNodesID := []uint{}
-	// TODO: Refactor this to use osctrl-api instead of direct DB queries
-	// Create environment target
-	if len(q.Environments) > 0 {
-		expected = []uint{}
-		for _, e := range q.Environments {
-			if (e != "") && h.Envs.Exists(e) {
-				nodes, err := h.Nodes.GetByEnv(e, "active", h.Settings.InactiveHours(settings.NoEnvironmentID))
-				if err != nil {
-					adminErrorResponse(w, "error getting nodes by environment", http.StatusInternalServerError, err)
-					return
-				}
-				for _, n := range nodes {
-					expected = append(expected, n.ID)
-				}
-			}
-		}
-		targetNodesID = utils.Intersect(targetNodesID, expected)
-	}
-	// Create platform target
-	if len(q.Platforms) > 0 {
-		expected = []uint{}
-		platforms, _ := h.Nodes.GetAllPlatforms()
-		for _, p := range q.Platforms {
-			if (p != "") && checkValidPlatform(platforms, p) {
-				nodes, err := h.Nodes.GetByPlatform(p, "active", h.Settings.InactiveHours(settings.NoEnvironmentID))
-				if err != nil {
-					adminErrorResponse(w, "error getting nodes by platform", http.StatusInternalServerError, err)
-					return
-				}
-				for _, n := range nodes {
-					expected = append(expected, n.ID)
-				}
-			}
-		}
-		targetNodesID = utils.Intersect(targetNodesID, expected)
-	}
-	// Create UUIDs target
-	if len(q.UUIDs) > 0 {
-		expected = []uint{}
-		for _, u := range q.UUIDs {
-			if u != "" {
-				node, err := h.Nodes.GetByUUID(u)
-				if err != nil {
-					log.Err(err).Msgf("error getting node %s and failed to create node query for it", u)
-					continue
-				}
-				expected = append(expected, node.ID)
-			}
-		}
-		targetNodesID = utils.Intersect(targetNodesID, expected)
-	}
-	// Create hostnames target
-	if len(q.Hosts) > 0 {
-		expected = []uint{}
-		for _, _h := range q.Hosts {
-			if _h != "" {
-				node, err := h.Nodes.GetByIdentifier(_h)
-				if err != nil {
-					log.Err(err).Msgf("error getting node %s and failed to create node query for it", _h)
-					continue
-				}
-				expected = append(expected, node.ID)
-			}
-		}
-		targetNodesID = utils.Intersect(targetNodesID, expected)
-	}
-
 	// If the list is empty, we don't need to create node queries
 	if len(targetNodesID) != 0 {
 		if err := h.Queries.CreateNodeQueries(targetNodesID, newQuery.ID); err != nil {
@@ -252,12 +197,12 @@ func (h *HandlersAdmin) CarvesRunPOSTHandler(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.CarveLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
 	log.Debug().Msg("Decoding POST body")
-	var c DistributedCarveRequest
+	var c DistributedQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 		adminErrorResponse(w, "error parsing POST body", http.StatusInternalServerError, err)
 		return
@@ -273,101 +218,46 @@ func (h *HandlersAdmin) CarvesRunPOSTHandler(w http.ResponseWriter, r *http.Requ
 		adminErrorResponse(w, "path can not be empty", http.StatusInternalServerError, nil)
 		return
 	}
-	query := generateCarveQuery(c.Path, false)
-	// Prepare and create new carve
-	carveName := generateCarveName()
 	// Set query expiration
 	expTime := queries.QueryExpiration(c.ExpHours)
 	if c.ExpHours == 0 {
 		expTime = time.Time{}
 	}
-	newQuery := queries.DistributedQuery{
-		Query:         query,
-		Name:          carveName,
-		Creator:       ctx[sessions.CtxUser],
-		Expected:      0,
-		Executions:    0,
-		Active:        true,
-		Completed:     false,
-		Deleted:       false,
-		Expired:       false,
-		Expiration:    expTime,
-		Type:          queries.CarveQueryType,
-		Path:          c.Path,
-		EnvironmentID: env.ID,
-	}
-	if err := h.Queries.Create(newQuery); err != nil {
+	newQuery := newCarveReady(ctx[sessions.CtxUser], c.Path, expTime, env.ID, c)
+	if err := h.Queries.Create(&newQuery); err != nil {
 		adminErrorResponse(w, "error creating carve", http.StatusInternalServerError, err)
 		return
 	}
-	// Temporary list of UUIDs to calculate Expected
-	var expected []string
-	// Create environment target
-	if len(c.Environments) > 0 {
-		for _, e := range c.Environments {
-			if (e != "") && h.Envs.Exists(e) {
-				if err := h.Queries.CreateTarget(carveName, queries.QueryTargetEnvironment, e); err != nil {
-					adminErrorResponse(w, "error creating carve environment target", http.StatusInternalServerError, err)
-					return
-				}
-				nodes, err := h.Nodes.GetByEnv(e, "active", h.Settings.InactiveHours(settings.NoEnvironmentID))
-				if err != nil {
-					adminErrorResponse(w, "error getting nodes by environment", http.StatusInternalServerError, err)
-					return
-				}
-				for _, n := range nodes {
-					expected = append(expected, n.UUID)
-				}
-			}
+	// Prepare data for the handler code
+	data := handlers.ProcessingQuery{
+		Envs:          c.Environments,
+		Platforms:     c.Platforms,
+		UUIDs:         c.UUIDs,
+		Hosts:         c.Hosts,
+		Tags:          c.Tags,
+		EnvID:         env.ID,
+		InactiveHours: h.Settings.InactiveHours(settings.NoEnvironmentID),
+	}
+	manager := handlers.Managers{
+		Nodes: h.Nodes,
+		Envs:  h.Envs,
+		Tags:  h.Tags,
+	}
+	targetNodesID, err := handlers.CreateQueryCarve(data, manager, newQuery)
+	if err != nil {
+		adminErrorResponse(w, "error creating query", http.StatusInternalServerError, err)
+		return
+	}
+	// If the list is empty, we don't need to create node queries
+	if len(targetNodesID) != 0 {
+		if err := h.Queries.CreateNodeQueries(targetNodesID, newQuery.ID); err != nil {
+			log.Err(err).Msgf("error creating node queries for carve %s", newQuery.Name)
+			adminErrorResponse(w, "error creating node queries", http.StatusInternalServerError, err)
+			return
 		}
 	}
-	// Create platform target
-	if len(c.Platforms) > 0 {
-		platforms, _ := h.Nodes.GetAllPlatforms()
-		for _, p := range c.Platforms {
-			if (p != "") && checkValidPlatform(platforms, p) {
-				if err := h.Queries.CreateTarget(carveName, queries.QueryTargetPlatform, p); err != nil {
-					adminErrorResponse(w, "error creating carve platform target", http.StatusInternalServerError, err)
-					return
-				}
-				nodes, err := h.Nodes.GetByPlatform(p, "active", h.Settings.InactiveHours(settings.NoEnvironmentID))
-				if err != nil {
-					adminErrorResponse(w, "error getting nodes by platform", http.StatusInternalServerError, err)
-					return
-				}
-				for _, n := range nodes {
-					expected = append(expected, n.UUID)
-				}
-			}
-		}
-	}
-	// Create UUIDs target
-	if len(c.UUIDs) > 0 {
-		for _, u := range c.UUIDs {
-			if (u != "") && h.Nodes.CheckByUUID(u) {
-				if err := h.Queries.CreateTarget(carveName, queries.QueryTargetUUID, u); err != nil {
-					adminErrorResponse(w, "error creating carve UUID target", http.StatusInternalServerError, err)
-					return
-				}
-				expected = append(expected, u)
-			}
-		}
-	}
-	// Create hostnames target
-	if len(c.Hosts) > 0 {
-		for _, _h := range c.Hosts {
-			if (_h != "") && h.Nodes.CheckByHost(_h) {
-				if err := h.Queries.CreateTarget(carveName, queries.QueryTargetLocalname, _h); err != nil {
-					adminErrorResponse(w, "error creating carve hostname target", http.StatusInternalServerError, err)
-					return
-				}
-			}
-		}
-	}
-	// Remove duplicates from expected
-	expectedClear := removeStringDuplicates(expected)
 	// Update value for expected
-	if err := h.Queries.SetExpected(carveName, len(expectedClear), env.ID); err != nil {
+	if err := h.Queries.SetExpected(newQuery.Name, len(targetNodesID), env.ID); err != nil {
 		adminErrorResponse(w, "error setting expected", http.StatusInternalServerError, err)
 		return
 	}
@@ -397,7 +287,7 @@ func (h *HandlersAdmin) QueryActionsPOSTHandler(w http.ResponseWriter, r *http.R
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions for query
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.QueryLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -414,6 +304,11 @@ func (h *HandlersAdmin) QueryActionsPOSTHandler(w http.ResponseWriter, r *http.R
 	}
 	switch q.Action {
 	case "delete":
+		// Deleting queries only allowed to full admin users
+		if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
+			adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions to delete queries", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+			return
+		}
 		for _, n := range q.Names {
 			if err := h.Queries.Delete(n, env.ID); err != nil {
 				adminErrorResponse(w, "error deleting query", http.StatusInternalServerError, err)
@@ -438,6 +333,10 @@ func (h *HandlersAdmin) QueryActionsPOSTHandler(w http.ResponseWriter, r *http.R
 		}
 		adminOKResponse(w, "queries activated successfully")
 	case "saved_delete":
+		if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
+			adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions to delete saved queries", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+			return
+		}
 		for _, n := range q.Names {
 			if err := h.Queries.DeleteSaved(n, ctx[sessions.CtxUser], env.ID); err != nil {
 				adminErrorResponse(w, "error deleting query", http.StatusInternalServerError, err)
@@ -455,12 +354,24 @@ func (h *HandlersAdmin) CarvesActionsPOSTHandler(w http.ResponseWriter, r *http.
 	if h.DebugHTTPConfig.Enabled {
 		utils.DebugHTTPDump(h.DebugHTTP, r, h.DebugHTTPConfig.ShowBody)
 	}
+	// Extract environment
+	envVar := r.PathValue("env")
+	if envVar == "" {
+		log.Info().Msg("environment is missing")
+		return
+	}
+	// Get environment
+	env, err := h.Envs.Get(envVar)
+	if err != nil {
+		log.Err(err).Msgf("error getting environment %s", envVar)
+		return
+	}
 	var q DistributedCarvesActionRequest
 	// Get context data
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
-	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.CarveLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.CarveLevel, env.UUID) {
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -476,6 +387,10 @@ func (h *HandlersAdmin) CarvesActionsPOSTHandler(w http.ResponseWriter, r *http.
 	}
 	switch q.Action {
 	case "delete":
+		if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
+			adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions to delete carves", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+			return
+		}
 		for _, n := range q.IDs {
 			if err := h.Carves.Delete(n); err != nil {
 				adminErrorResponse(w, "error deleting carve", http.StatusInternalServerError, err)
@@ -513,7 +428,7 @@ func (h *HandlersAdmin) ConfPOSTHandler(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -700,7 +615,7 @@ func (h *HandlersAdmin) IntervalsPOSTHandler(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -719,7 +634,7 @@ func (h *HandlersAdmin) IntervalsPOSTHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	// After updating interval, you need to re-generate flags
-	flags, err := h.Envs.GenerateFlagsEnv(envVar, "", "")
+	flags, err := h.Envs.GenerateFlagsEnv(envVar, "", "", h.OsqueryValues)
 	if err != nil {
 		adminErrorResponse(w, "error re-generating flags", http.StatusInternalServerError, err)
 		return
@@ -756,7 +671,7 @@ func (h *HandlersAdmin) ExpirationPOSTHandler(w http.ResponseWriter, r *http.Req
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -840,7 +755,7 @@ func (h *HandlersAdmin) NodeActionsPOSTHandler(w http.ResponseWriter, r *http.Re
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -886,7 +801,7 @@ func (h *HandlersAdmin) EnvsPOSTHandler(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -910,7 +825,7 @@ func (h *HandlersAdmin) EnvsPOSTHandler(w http.ResponseWriter, r *http.Request) 
 			// Empty configuration
 			env.Configuration = h.Envs.GenEmptyConfiguration(true)
 			// Generate flags
-			flags, err := h.Envs.GenerateFlags(env, "", "")
+			flags, err := h.Envs.GenerateFlags(env, "", "", h.OsqueryValues)
 			if err != nil {
 				adminErrorResponse(w, "error generating flags", http.StatusInternalServerError, err)
 				return
@@ -936,7 +851,8 @@ func (h *HandlersAdmin) EnvsPOSTHandler(w http.ResponseWriter, r *http.Request) 
 				ctx[sessions.CtxUser],
 				env.ID,
 				false,
-				tags.TagTypeEnv); err != nil {
+				tags.TagTypeEnv,
+				""); err != nil {
 				adminErrorResponse(w, "error generating tag", http.StatusInternalServerError, err)
 				return
 			}
@@ -987,7 +903,7 @@ func (h *HandlersAdmin) SettingsPOSTHandler(w http.ResponseWriter, r *http.Reque
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -1061,7 +977,7 @@ func (h *HandlersAdmin) UsersPOSTHandler(w http.ResponseWriter, r *http.Request)
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -1083,7 +999,7 @@ func (h *HandlersAdmin) UsersPOSTHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		// Prepare user to create
-		newUser, err := h.Users.New(u.Username, u.NewPassword, u.Email, u.Fullname, u.Admin)
+		newUser, err := h.Users.New(u.Username, u.NewPassword, u.Email, u.Fullname, u.Admin, u.Service)
 		if err != nil {
 			adminErrorResponse(w, "error with new user", http.StatusInternalServerError, err)
 			return
@@ -1093,8 +1009,16 @@ func (h *HandlersAdmin) UsersPOSTHandler(w http.ResponseWriter, r *http.Request)
 			adminErrorResponse(w, "error creating user", http.StatusInternalServerError, err)
 			return
 		}
-		// TODO verify environments
-		access := h.Users.GenEnvUserAccess(u.Environments, true, (u.Admin), (u.Admin), (u.Admin))
+		// If user is admin, give access to all environments
+		envs := u.Environments
+		if u.Admin {
+			envs, err = h.Envs.UUIDs()
+			if err != nil {
+				adminErrorResponse(w, "error getting environments", http.StatusInternalServerError, err)
+				return
+			}
+		}
+		access := h.Users.GenEnvUserAccess(envs, true, (u.Admin), (u.Admin), (u.Admin))
 		perms := h.Users.GenPermissions(u.Username, ctx[sessions.CtxUser], access)
 		if err := h.Users.CreatePermissions(perms); err != nil {
 			adminErrorResponse(w, "error creating permissions", http.StatusInternalServerError, err)
@@ -1143,6 +1067,11 @@ func (h *HandlersAdmin) UsersPOSTHandler(w http.ResponseWriter, r *http.Request)
 				adminErrorResponse(w, "error removing user", http.StatusInternalServerError, err)
 				return
 			}
+			// Delete permissions
+			if err := h.Users.DeleteAllPermissions(user.Username); err != nil {
+				adminErrorResponse(w, "error removing user permissions", http.StatusInternalServerError, err)
+				return
+			}
 		}
 		adminOKResponse(w, "user removed successfully")
 	case "admin":
@@ -1156,29 +1085,31 @@ func (h *HandlersAdmin) UsersPOSTHandler(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			if u.Admin {
-				_, err := h.Envs.Names()
+				envUUIDs, err := h.Envs.UUIDs()
 				if err != nil {
 					adminErrorResponse(w, "error getting environments", http.StatusInternalServerError, err)
 					return
 				}
-				/*
-					perms := h.Users.GenPermissions(namesEnvs, users.AdminLevel)
-					if err := h.Users.ChangePermissions(u.Username, perms); err != nil {
-						adminErrorResponse(w, "error changing permissions", http.StatusInternalServerError, err)
-												return
-					}
-				*/
-				token, exp, err := h.Users.CreateToken(u.Username, h.AdminConfig.Host, h.Users.JWTConfig.HoursToExpire)
-				if err != nil {
-					adminErrorResponse(w, "error creating token", http.StatusInternalServerError, err)
-					return
-				}
-				if err := h.Users.UpdateToken(u.Username, token, exp); err != nil {
-					adminErrorResponse(w, "error saving token", http.StatusInternalServerError, err)
+				access := h.Users.GenEnvUserAccess(envUUIDs, true, (u.Admin), (u.Admin), (u.Admin))
+				perms := h.Users.GenPermissions(u.Username, ctx[sessions.CtxUser], access)
+				if err := h.Users.CreatePermissions(perms); err != nil {
+					adminErrorResponse(w, "error creating permissions", http.StatusInternalServerError, err)
 					return
 				}
 			}
 			adminOKResponse(w, "admin changed successfully")
+		}
+	case "service":
+		if u.Username == ctx[sessions.CtxUser] {
+			adminErrorResponse(w, "not a good idea", http.StatusInternalServerError, fmt.Errorf("attempt to service current user %s", u.Username))
+			return
+		}
+		if h.Users.Exists(u.Username) {
+			if err := h.Users.ChangeService(u.Username, u.Service); err != nil {
+				adminErrorResponse(w, "error changing service", http.StatusInternalServerError, err)
+				return
+			}
+			adminOKResponse(w, "service changed successfully")
 		}
 	}
 	// Serialize and send response
@@ -1195,7 +1126,7 @@ func (h *HandlersAdmin) TagsPOSTHandler(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -1221,7 +1152,7 @@ func (h *HandlersAdmin) TagsPOSTHandler(w http.ResponseWriter, r *http.Request) 
 			adminErrorResponse(w, "error adding tag", http.StatusInternalServerError, fmt.Errorf("tag %s already exists", t.Name))
 			return
 		}
-		if err := h.Tags.NewTag(t.Name, t.Description, t.Color, t.Icon, ctx[sessions.CtxUser], env.ID, false, t.TagType); err != nil {
+		if err := h.Tags.NewTag(t.Name, t.Description, t.Color, t.Icon, ctx[sessions.CtxUser], env.ID, false, t.TagType, t.Custom); err != nil {
 			adminErrorResponse(w, "error with new tag", http.StatusInternalServerError, err)
 			return
 		}
@@ -1255,6 +1186,16 @@ func (h *HandlersAdmin) TagsPOSTHandler(w http.ResponseWriter, r *http.Request) 
 				adminErrorResponse(w, "error changing tag type", http.StatusInternalServerError, err)
 				return
 			}
+			if err := h.Tags.ChangeCustom(&tag, tags.TagTypeDecorator(t.TagType)); err != nil {
+				adminErrorResponse(w, "error changing custom", http.StatusInternalServerError, err)
+				return
+			}
+		}
+		if t.Custom != "" && t.Custom != tag.CustomTag {
+			if err := h.Tags.ChangeCustom(&tag, t.Custom); err != nil {
+				adminErrorResponse(w, "error changing custom", http.StatusInternalServerError, err)
+				return
+			}
 		}
 		adminOKResponse(w, "tag updated successfully")
 	case tags.ActionRemove:
@@ -1278,7 +1219,7 @@ func (h *HandlersAdmin) TagNodesPOSTHandler(w http.ResponseWriter, r *http.Reque
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -1317,7 +1258,7 @@ func (h *HandlersAdmin) TagNodesPOSTHandler(w http.ResponseWriter, r *http.Reque
 	}
 	// Processing the list of tags to add and all nodes to tag
 	for _, n := range toBeProcessed {
-		if err := h.Tags.TagNodeMulti(t.TagsAdd, n, ctx[sessions.CtxUser], false); err != nil {
+		if err := h.Tags.TagNodeMulti(t.TagsAdd, n, ctx[sessions.CtxUser], false, ""); err != nil {
 			adminErrorResponse(w, "error with tag", http.StatusInternalServerError, err)
 			return
 		}
@@ -1343,7 +1284,7 @@ func (h *HandlersAdmin) PermissionsPOSTHandler(w http.ResponseWriter, r *http.Re
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, users.NoEnvironment) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body
@@ -1408,7 +1349,7 @@ func (h *HandlersAdmin) EnrollPOSTHandler(w http.ResponseWriter, r *http.Request
 	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
 	// Check permissions
 	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.AdminLevel, env.UUID) {
-		adminErrorResponse(w, fmt.Sprintf("%s has insuficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
+		adminErrorResponse(w, fmt.Sprintf("%s has insufficient permissions", ctx[sessions.CtxUser]), http.StatusForbidden, nil)
 		return
 	}
 	// Parse request JSON body

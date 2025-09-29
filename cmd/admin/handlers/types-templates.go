@@ -20,35 +20,37 @@ type LoginTemplateData struct {
 
 // TemplateMetadata to pass some metadata to templates
 type TemplateMetadata struct {
-	Username       string
-	Level          string
-	Service        string
-	Version        string
-	CSRFToken      string
+	Username  string
+	Admin     bool
+	Service   string
+	Version   string
+	Commit    string
+	BuildDate string
+	CSRFToken string
 }
 
 // AsideLeftMetadata to pass metadata to the aside left menu
 type AsideLeftMetadata struct {
-	EnvUUID      string
-	ActiveNode   bool
-	InactiveNode bool
-	NodeUUID     string
-	Query        bool
-	QueryName    string
-	Carve        bool
-	CarveName    string
+	EnvUUID       string
+	EnvName       string
+	ActiveNode    bool
+	InactiveNode  bool
+	NodeUUID      string
+	Query         bool
+	QueryName     string
+	Carve         bool
+	CarveName     string
+	OsqueryValues config.OsqueryConfiguration
 }
 
 // TableTemplateData for passing data to the table template
 type TableTemplateData struct {
 	Title        string
-	EnvUUID      string
 	Selector     string
 	SelectorName string
 	Target       string
 	Tags         []tags.AdminTag
 	Environments []environments.TLSEnvironment
-	Platforms    []string
 	Metadata     TemplateMetadata
 	LeftMetadata AsideLeftMetadata
 }
@@ -66,8 +68,6 @@ type ConfTemplateData struct {
 // EnrollTemplateData for passing data to the conf template
 type EnrollTemplateData struct {
 	Title                 string
-	EnvName               string
-	EnvUUID               string
 	OnelinerExpiration    bool
 	EnrollExpiry          string
 	EnrollExpired         bool
@@ -98,13 +98,13 @@ type EnrollTemplateData struct {
 // QueryRunTemplateData for passing data to the query run template
 type QueryRunTemplateData struct {
 	Title         string
-	EnvUUID       string
 	Environments  []environments.TLSEnvironment
 	Platforms     []string
 	UUIDs         []string
 	Hosts         []string
+	Tags          []string
 	Tables        []types.OsqueryTable
-	TablesVersion string
+	OsqueryValues config.OsqueryConfiguration
 	Metadata      TemplateMetadata
 	LeftMetadata  AsideLeftMetadata
 }
@@ -115,7 +115,6 @@ type CarvesRunTemplateData QueryRunTemplateData
 // GenericTableTemplateData for passing data to a table template
 type GenericTableTemplateData struct {
 	Title        string
-	EnvUUID      string
 	Environments []environments.TLSEnvironment
 	Platforms    []string
 	Target       string
@@ -135,11 +134,10 @@ type CarvesTableTemplateData GenericTableTemplateData
 // CarvesDetailsTemplateData for passing data to the carves details
 type CarvesDetailsTemplateData struct {
 	Title        string
-	EnvUUID      string
 	Environments []environments.TLSEnvironment
 	Platforms    []string
 	Query        queries.DistributedQuery
-	QueryTargets []queries.DistributedQueryTarget
+	QueryTargets []CarveTarget
 	Carves       []carves.CarvedFile
 	CarveBlocks  map[string][]carves.CarvedBlock
 	Metadata     TemplateMetadata
@@ -149,11 +147,10 @@ type CarvesDetailsTemplateData struct {
 // QueryLogsTemplateData for passing data to the query template
 type QueryLogsTemplateData struct {
 	Title         string
-	EnvUUID       string
 	Environments  []environments.TLSEnvironment
 	Platforms     []string
 	Query         queries.DistributedQuery
-	QueryTargets  []queries.DistributedQueryTarget
+	QueryTargets  []QueryTarget
 	Metadata      TemplateMetadata
 	LeftMetadata  AsideLeftMetadata
 	ServiceConfig config.JSONConfigurationService
@@ -185,7 +182,18 @@ type UsersTemplateData struct {
 	Title        string
 	Environments []environments.TLSEnvironment
 	Platforms    []string
-	CurrentUsers []users.AdminUser
+	SystemUsers  []users.AdminUser
+	ServiceUsers []users.AdminUser
+	Metadata     TemplateMetadata
+	LeftMetadata AsideLeftMetadata
+}
+
+// TokensTemplateData for passing data to the users template
+type TokensTemplateData struct {
+	Title        string
+	Environments []environments.TLSEnvironment
+	SystemUsers  []users.AdminUser
+	ServiceUsers []users.AdminUser
 	Metadata     TemplateMetadata
 	LeftMetadata AsideLeftMetadata
 }
@@ -194,8 +202,8 @@ type UsersTemplateData struct {
 type ProfileTemplateData struct {
 	Title        string
 	Environments []environments.TLSEnvironment
-	Platforms    []string
 	CurrentUser  users.AdminUser
+	Permissions  users.UserAccess
 	Metadata     TemplateMetadata
 	LeftMetadata AsideLeftMetadata
 }
@@ -223,7 +231,6 @@ type TagsTemplateData struct {
 // NodeTemplateData for passing data to the query template
 type NodeTemplateData struct {
 	Title         string
-	EnvUUID       string
 	Node          nodes.OsqueryNode
 	NodeTags      []tags.AdminTag
 	TagsForNode   []tags.AdminTagForNode

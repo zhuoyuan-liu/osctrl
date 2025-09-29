@@ -1,9 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"path"
 
 	"github.com/jmpsec/osctrl/pkg/queries"
 	"github.com/jmpsec/osctrl/pkg/settings"
@@ -13,7 +14,7 @@ import (
 // GetQueries to retrieve queries from osctrl
 func (api *OsctrlAPI) GetQueries(target, env string) ([]queries.DistributedQuery, error) {
 	var qs []queries.DistributedQuery
-	reqURL := fmt.Sprintf("%s%s%s/%s/list/%s", api.Configuration.URL, APIPath, APIQueries, env, target)
+	reqURL := fmt.Sprintf("%s%s", api.Configuration.URL, path.Join(APIPath, APIQueries, env, "list", target))
 	rawQs, err := api.GetGeneric(reqURL, nil)
 	if err != nil {
 		return qs, fmt.Errorf("error api request - %w - %s", err, string(rawQs))
@@ -27,7 +28,7 @@ func (api *OsctrlAPI) GetQueries(target, env string) ([]queries.DistributedQuery
 // GetQuery to retrieve one query from osctrl
 func (api *OsctrlAPI) GetQuery(env, name string) (queries.DistributedQuery, error) {
 	var q queries.DistributedQuery
-	reqURL := fmt.Sprintf("%s%s%s/%s/%s", api.Configuration.URL, APIPath, APIQueries, env, name)
+	reqURL := fmt.Sprintf("%s%s", api.Configuration.URL, path.Join(APIPath, APIQueries, env, name))
 	rawQ, err := api.GetGeneric(reqURL, nil)
 	if err != nil {
 		return q, fmt.Errorf("error api request - %w - %s", err, string(rawQ))
@@ -41,7 +42,7 @@ func (api *OsctrlAPI) GetQuery(env, name string) (queries.DistributedQuery, erro
 // DeleteQuery to delete query from osctrl
 func (api *OsctrlAPI) DeleteQuery(env, name string) (types.ApiGenericResponse, error) {
 	var r types.ApiGenericResponse
-	reqURL := fmt.Sprintf("%s%s%s/%s/%s/%s", api.Configuration.URL, APIPath, APIQueries, env, settings.QueryDelete, name)
+	reqURL := fmt.Sprintf("%s%s", api.Configuration.URL, path.Join(APIPath, APIQueries, env, settings.QueryDelete, name))
 	rawQ, err := api.PostGeneric(reqURL, nil)
 	if err != nil {
 		return r, fmt.Errorf("error api request - %w - %s", err, string(rawQ))
@@ -55,7 +56,7 @@ func (api *OsctrlAPI) DeleteQuery(env, name string) (types.ApiGenericResponse, e
 // ExpireQuery to expire query from osctrl
 func (api *OsctrlAPI) ExpireQuery(env, name string) (types.ApiGenericResponse, error) {
 	var r types.ApiGenericResponse
-	reqURL := fmt.Sprintf("%s%s%s/%s/%s/%s", api.Configuration.URL, APIPath, APIQueries, env, settings.QueryExpire, name)
+	reqURL := fmt.Sprintf("%s%s", api.Configuration.URL, path.Join(APIPath, APIQueries, env, settings.QueryExpire, name))
 	rawQ, err := api.PostGeneric(reqURL, nil)
 	if err != nil {
 		return r, fmt.Errorf("error api request - %w - %s", err, string(rawQ))
@@ -69,7 +70,7 @@ func (api *OsctrlAPI) ExpireQuery(env, name string) (types.ApiGenericResponse, e
 // CompleteQuery to complete a query from osctrl
 func (api *OsctrlAPI) CompleteQuery(env, name string) (types.ApiGenericResponse, error) {
 	var r types.ApiGenericResponse
-	reqURL := fmt.Sprintf("%s%s%s/%s/%s/%s", api.Configuration.URL, APIPath, APIQueries, env, settings.QueryComplete, name)
+	reqURL := fmt.Sprintf("%s%s", api.Configuration.URL, path.Join(APIPath, APIQueries, env, settings.QueryComplete, name))
 	rawQ, err := api.PostGeneric(reqURL, nil)
 	if err != nil {
 		return r, fmt.Errorf("error api request - %w - %s", err, string(rawQ))
@@ -81,21 +82,24 @@ func (api *OsctrlAPI) CompleteQuery(env, name string) (types.ApiGenericResponse,
 }
 
 // RunQuery to initiate a query in osctrl
-func (api *OsctrlAPI) RunQuery(env, uuid, query string, hidden bool, exp int) (types.ApiQueriesResponse, error) {
+func (api *OsctrlAPI) RunQuery(env, query string, uuids, hosts, platforms, tags []string, hidden bool, exp int) (types.ApiQueriesResponse, error) {
 	q := types.ApiDistributedQueryRequest{
-		UUIDs:    []string{uuid},
+		UUIDs:    uuids,
+		Hosts:    hosts,
+		Platforms: platforms,
+		Tags:     tags,
 		Query:    query,
 		Hidden:   hidden,
 		ExpHours: exp,
 	}
 	var r types.ApiQueriesResponse
-	reqURL := fmt.Sprintf("%s%s%s/%s", api.Configuration.URL, APIPath, APIQueries, env)
+	reqURL := fmt.Sprintf("%s%s", api.Configuration.URL, path.Join(APIPath, APIQueries, env))
 	jsonMessage, err := json.Marshal(q)
 	if err != nil {
 		return r, fmt.Errorf("error marshaling data - %w", err)
 
 	}
-	jsonParam := strings.NewReader(string(jsonMessage))
+	jsonParam := bytes.NewReader(jsonMessage)
 	rawQ, err := api.PostGeneric(reqURL, jsonParam)
 	if err != nil {
 		return r, fmt.Errorf("error api request - %w - %s", err, string(rawQ))

@@ -16,7 +16,19 @@ function confirmAddUser() {
   var _fullname = $("#user_fullname").val();
   var _password = $("#user_password").val();
   var _admin = $("#user_admin").is(":checked");
+  var _service = $("#user_service").is(":checked");
   var _token = $("#user_token").is(":checked");
+  var _env_list = $("#user_environments").val();
+
+  // Check if all environments have been selected
+  if (_env_list.includes("all_environments_99")) {
+    _env_list = [];
+    $("#user_environments option").each(function () {
+      if ($(this).val() !== "" && $(this).val() !== "all_environments_99") {
+        _env_list.push($(this).val());
+      }
+    });
+  }
 
   var data = {
     csrftoken: _csrftoken,
@@ -26,7 +38,9 @@ function confirmAddUser() {
     fullname: _fullname,
     new_password: _password,
     admin: _admin,
+    service: _service,
     token: _token,
+    environments: _env_list,
   };
   sendPostRequest(data, _url, _url, false);
 }
@@ -43,7 +57,7 @@ function confirmDeleteUser(_user) {
 
 function changeAdminUser(_user) {
   var _csrftoken = $("#csrftoken").val();
-  var _value = $("#" + _user).is(":checked");
+  var _value = $("#admin_" + _user).is(":checked");
 
   if (_value) {
     $("#permissions-button-" + _user).hide();
@@ -59,7 +73,22 @@ function changeAdminUser(_user) {
     username: _user,
     admin: _value,
   };
-  sendPostRequest(data, _url, "", false);
+  sendPostRequest(data, _url, _url, false);
+}
+
+function changeServiceUser(_user) {
+  var _csrftoken = $("#csrftoken").val();
+  var _value = $("#service_" + _user).is(":checked");
+
+  var _url = window.location.pathname;
+
+  var data = {
+    csrftoken: _csrftoken,
+    action: "service",
+    username: _user,
+    service: _value,
+  };
+  sendPostRequest(data, _url, _url, false);
 }
 
 function deleteUser(_user) {

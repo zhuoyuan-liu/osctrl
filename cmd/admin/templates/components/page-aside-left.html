@@ -1,5 +1,7 @@
 {{ define "page-aside-left" }}
 
+{{ $leftmeta := .LeftMetadata }}
+
 <div class="sidebar">
   <nav class="sidebar-nav">
     <ul class="nav">
@@ -9,8 +11,6 @@
           <i class="nav-icon fas fa-tachometer-alt"></i> Dashboard
         </a>
       </li>
-
-      {{ $leftmeta := .LeftMetadata }}
 
       <li class="nav-title">Nodes by environment</li>
       {{range  $i, $e := $.Environments}}
@@ -71,6 +71,7 @@
               <i class="nav-icon fas fa-plus-circle"></i> enroll nodes
             </a>
           </li>
+        {{ if $leftmeta.OsqueryValues.Query }}
           <li class="nav-item nav-dropdown">
             <a style="padding-left: 2em;" class="nav-link" href="/query/{{ $e.UUID }}/run">
               <i class="nav-icon fab fa-searchengin"></i> run query
@@ -95,6 +96,8 @@
               <i class="nav-icon far fa-save"></i> saved queries
             </a>
           </li>
+        {{ end }}
+        {{ if $leftmeta.OsqueryValues.Carve }}
           <li class="nav-item nav-dropdown">
             <a style="padding-left: 2em;" class="nav-link" href="/carves/{{ $e.UUID }}/run">
               <i class="nav-icon fas fa-file-upload"></i> carve file
@@ -114,195 +117,11 @@
               </li>
             </ul>
           {{end}}
+        {{ end }}
         </ul>
       </li>
-      {{end}}
-
-{{ with .Metadata }}
-
-    {{ if eq .Level "admin" }}
       <li class="divider"></li>
-
-      <li class="nav-title">Nodes by Platform</li>
-      {{range  $i, $e := $.Platforms}}
-
-      <li class="nav-item nav-dropdown">
-        <input type="hidden" class="stats-platform-value" value="{{ $e }}">
-        <a class="nav-link nav-dropdown-toggle">
-          {{if eq $e "ubuntu"}}
-            <i class="nav-icon fa fl-ubuntu-inverse"></i>
-          {{end}}
-          {{if eq $e "darwin"}}
-            <i class="nav-icon fa fl-apple"></i>
-          {{end}}
-          {{if eq $e "windows"}}
-            <i class="nav-icon fab fa-windows"></i>
-          {{end}}
-          {{if eq $e "centos"}}
-            <i class="nav-icon fa fl-centos"></i>
-          {{end}}
-          {{if eq $e "rhel"}}
-            <i class="nav-icon fa fl-redhat"></i>
-          {{end}}
-          {{if eq $e "amzn"}}
-            <i class="nav-icon fa fl-redhat"></i>
-          {{end}}
-          {{if eq $e "fedora"}}
-            <i class="nav-icon fa fl-centos"></i>
-          {{end}}
-          {{if eq $e "debian"}}
-            <i class="nav-icon fa fl-debian"></i>
-          {{end}}
-          {{if eq $e "freebsd"}}
-            <i class="nav-icon fa fl-freebsd"></i>
-          {{end}}
-          {{if eq $e "opensuse"}}
-            <i class="nav-icon fa fl-opensuse"></i>
-          {{end}}
-          {{if eq $e "arch"}}
-            <i class="nav-icon fa fl-archlinux"></i>
-          {{end}}
-          {{if eq $e "unknown"}}
-            <i class="nav-icon fa fa-question-circle"></i>
-          {{end}}
-          {{ $e }}
-          <span class="mr-4 badge badge-light stats-platform-{{ $e }}-total">X</span>
-        </a>
-        <ul class="nav-dropdown-items">
-          <li class="nav-item">
-            <a style="padding-left: 2em;" class="nav-link" href="/platform/{{ $e }}/active">
-              {{if eq $e "ubuntu"}}
-                <i class="nav-icon fa fl-ubuntu-inverse"></i>
-              {{end}}
-              {{if eq $e "darwin"}}
-              <i class="nav-icon fa fl-apple"></i>
-              {{end}}
-              {{if eq $e "windows"}}
-                <i class="nav-icon fab fa-windows"></i>
-              {{end}}
-              {{if eq $e "centos"}}
-                <i class="nav-icon fa fl-centos"></i>
-              {{end}}
-              {{if eq $e "rhel"}}
-                <i class="nav-icon fa fl-redhat"></i>
-              {{end}}
-              {{if eq $e "amzn"}}
-                <i class="nav-icon fa fl-redhat"></i>
-              {{end}}
-              {{if eq $e "fedora"}}
-                <i class="nav-icon fa fl-centos"></i>
-              {{end}}
-              {{if eq $e "debian"}}
-                <i class="nav-icon fa fl-debian"></i>
-              {{end}}
-              {{if eq $e "freebsd"}}
-                <i class="nav-icon fa fl-freebsd"></i>
-              {{end}}
-              {{if eq $e "opensuse"}}
-                <i class="nav-icon fa fl-opensuse"></i>
-              {{end}}
-              {{if eq $e "arch"}}
-                <i class="nav-icon fa fl-archlinux"></i>
-              {{end}}
-              {{if eq $e "unknown"}}
-                <i class="nav-icon fa fa-question-circle"></i>
-              {{end}}
-              active
-              <span class="badge badge-success stats-platform-{{ $e }}-active">Y</span>
-            </a>
-          </li>
-          <li class="nav-item">
-            <a style="padding-left: 2em;" class="nav-link" href="/platform/{{ $e }}/inactive">
-              {{if eq $e "ubuntu"}}
-                <i class="nav-icon fa fl-ubuntu-inverse"></i>
-              {{end}}
-              {{if eq $e "darwin"}}
-              <i class="nav-icon fa fl-apple"></i>
-              {{end}}
-              {{if eq $e "windows"}}
-                <i class="nav-icon fab fa-windows"></i>
-              {{end}}
-              {{if eq $e "centos"}}
-                <i class="nav-icon fa fl-centos"></i>
-              {{end}}
-              {{if eq $e "rhel"}}
-                <i class="nav-icon fa fl-redhat"></i>
-              {{end}}
-              {{if eq $e "amzn"}}
-                <i class="nav-icon fa fl-redhat"></i>
-              {{end}}
-              {{if eq $e "fedora"}}
-                <i class="nav-icon fa fl-centos"></i>
-              {{end}}
-              {{if eq $e "debian"}}
-                <i class="nav-icon fa fl-debian"></i>
-              {{end}}
-              {{if eq $e "freebsd"}}
-                <i class="nav-icon fa fl-freebsd"></i>
-              {{end}}
-              {{if eq $e "arch"}}
-                <i class="nav-icon fa fl-archlinux"></i>
-              {{end}}
-              {{if eq $e "opensuse"}}
-                <i class="nav-icon fa fl-opensuse"></i>
-              {{end}}
-              {{if eq $e "unknown"}}
-                <i class="nav-icon fa fa-question-circle"></i>
-              {{end}}
-              inactive
-              <span class="badge badge-danger stats-platform-{{ $e }}-inactive">Z</span>
-            </a>
-          </li>
-          <li class="nav-item">
-            <a style="padding-left: 2em;" class="nav-link" href="/platform/{{ $e }}/all">
-              {{if eq $e "ubuntu"}}
-                <i class="nav-icon fa fl-ubuntu-inverse"></i>
-              {{end}}
-              {{if eq $e "darwin"}}
-              <i class="nav-icon fa fl-apple"></i>
-              {{end}}
-              {{if eq $e "windows"}}
-                <i class="nav-icon fab fa-windows"></i>
-              {{end}}
-              {{if eq $e "centos"}}
-                <i class="nav-icon fa fl-centos"></i>
-              {{end}}
-              {{if eq $e "rhel"}}
-                <i class="nav-icon fa fl-redhat"></i>
-              {{end}}
-              {{if eq $e "amzn"}}
-                <i class="nav-icon fa fl-redhat"></i>
-              {{end}}
-              {{if eq $e "fedora"}}
-                <i class="nav-icon fa fl-centos"></i>
-              {{end}}
-              {{if eq $e "debian"}}
-                <i class="nav-icon fa fl-debian"></i>
-              {{end}}
-              {{if eq $e "freebsd"}}
-                <i class="nav-icon fa fl-freebsd"></i>
-              {{end}}
-              {{if eq $e "arch"}}
-                <i class="nav-icon fa fl-archlinux"></i>
-              {{end}}
-              {{if eq $e "opensuse"}}
-                <i class="nav-icon fa fl-opensuse"></i>
-              {{end}}
-              {{if eq $e "unknown"}}
-                <i class="nav-icon fa fa-question-circle"></i>
-              {{end}}
-              all
-              <span class="badge badge-light stats-platform-{{ $e }}-total">X</span>
-            </a>
-          </li>
-        </ul>
-      </li>
       {{end}}
-    {{end}}
-
-      <li class="divider"></li>
-
-  {{ end }}
 
     </ul>
   </nav>

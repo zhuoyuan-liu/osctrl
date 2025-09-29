@@ -17,6 +17,10 @@ const (
 	InactiveNodes = "inactive"
 	// AllNodes to represent all nodes
 	AllNodes = "all"
+	// EnvSelector to represent environment selector
+	EnvironmentSelector = "environment"
+	// PlatformSelector to represent platform selector
+	PlatformSelector = "platform"
 )
 
 // StatsData to display node stats
@@ -107,6 +111,22 @@ func (n *NodeManager) GetByIdentifier(identifier string) (OsqueryNode, error) {
 	return node, nil
 }
 
+// GetByIdentifierEnv to retrieve full node object from DB, by uuid or hostname or localname
+// UUID is expected uppercase
+func (n *NodeManager) GetByIdentifierEnv(identifier string, envid uint) (OsqueryNode, error) {
+	var node OsqueryNode
+	if err := n.DB.Where(
+		"(uuid = ? OR hostname = ? OR localname = ?) AND environment_id = ?",
+		strings.ToUpper(identifier),
+		identifier,
+		identifier,
+		envid,
+	).First(&node).Error; err != nil {
+		return node, err
+	}
+	return node, nil
+}
+
 // GetByUUID to retrieve full node object from DB, by uuid
 // UUID is expected uppercase
 func (n *NodeManager) GetByUUID(uuid string) (OsqueryNode, error) {
@@ -131,56 +151,65 @@ func (n *NodeManager) GetByUUIDEnv(uuid string, envid uint) (OsqueryNode, error)
 func (n *NodeManager) GetBySelector(stype, selector, target string, hours int64) ([]OsqueryNode, error) {
 	var nodes []OsqueryNode
 	var column string
-
 	switch stype {
-	case "environment":
-		column = "environment"
-	case "platform":
-		column = "platform"
+	case EnvironmentSelector:
+		column = EnvironmentSelector
+	case PlatformSelector:
+		column = PlatformSelector
 	default:
 		return nodes, fmt.Errorf("invalid selector type: %s", stype)
 	}
-
 	// Build query with base condition
 	query := n.DB.Where(column+" = ?", selector)
-
 	// Apply active/inactive filtering
 	query = ApplyNodeTarget(query, target, hours)
-
 	// Execute query
 	if err := query.Find(&nodes).Error; err != nil {
 		return nodes, err
 	}
-
 	return nodes, nil
 }
 
 // Gets to retrieve all/active/inactive nodes
 func (n *NodeManager) Gets(target string, hours int64) ([]OsqueryNode, error) {
 	var nodes []OsqueryNode
-
 	// Start with base query
 	query := n.DB
-
 	// Apply active/inactive filtering
 	query = ApplyNodeTarget(query, target, hours)
-
 	// Execute query
 	if err := query.Find(&nodes).Error; err != nil {
 		return nodes, err
 	}
-
 	return nodes, nil
 }
 
 // GetByEnv to retrieve target nodes by environment
-func (n *NodeManager) GetByEnv(environment, target string, hours int64) ([]OsqueryNode, error) {
-	return n.GetBySelector("environment", environment, target, hours)
+func (n *NodeManager) GetByEnv(env, target string, hours int64) ([]OsqueryNode, error) {
+	var nodes []OsqueryNode
+	// Build query with base condition
+	query := n.DB.Where("environment = ?", env)
+	// Apply active/inactive filtering
+	query = ApplyNodeTarget(query, target, hours)
+	// Execute query
+	if err := query.Find(&nodes).Error; err != nil {
+		return nodes, err
+	}
+	return nodes, nil
 }
 
 // GetByPlatform to retrieve target nodes by platform
-func (n *NodeManager) GetByPlatform(platform, target string, hours int64) ([]OsqueryNode, error) {
-	return n.GetBySelector("platform", platform, target, hours)
+func (n *NodeManager) GetByPlatform(envID uint, platform, target string, hours int64) ([]OsqueryNode, error) {
+	var nodes []OsqueryNode
+	// Build query with base condition
+	query := n.DB.Where("platform = ? AND environment_id = ?", platform, envID)
+	// Apply active/inactive filtering
+	query = ApplyNodeTarget(query, target, hours)
+	// Execute query
+	if err := query.Find(&nodes).Error; err != nil {
+		return nodes, err
+	}
+	return nodes, nil
 }
 
 // GetAllPlatforms to get all different platform with nodes in them
@@ -213,14 +242,24 @@ func (n *NodeManager) GetEnvPlatforms(environment string) ([]string, error) {
 	return platforms, nil
 }
 
-// GetStatsByEnv to populate table stats about nodes by environment
-func (n *NodeManager) GetStatsByEnv(environment string, hours int64) (StatsData, error) {
-	return GetStats(n.DB, "environment", environment, hours)
+// GetEnvIDPlatforms to get the platforms with nodes in them by environment
+func (n *NodeManager) GetEnvIDPlatforms(envID uint) ([]string, error) {
+	var platforms []string
+	var platform string
+	rows, err := n.DB.Table("osquery_nodes").Select("DISTINCT(platform)").Where("environment_id = ?", envID).Rows()
+	if err != nil {
+		return platforms, nil
+	}
+	for rows.Next() {
+		_ = rows.Scan(&platform)
+		platforms = append(platforms, platform)
+	}
+	return platforms, nil
 }
 
-// GetStatsByPlatform to populate table stats about nodes by platform
-func (n *NodeManager) GetStatsByPlatform(platform string, hours int64) (StatsData, error) {
-	return GetStats(n.DB, "platform", platform, hours)
+// GetStatsByEnv to populate table stats about nodes by environment
+func (n *NodeManager) GetStatsByEnv(environment string, hours int64) (StatsData, error) {
+	return GetStats(n.DB, EnvironmentSelector, environment, hours)
 }
 
 // UpdateMetadataByUUID to update node metadata by UUID
@@ -272,7 +311,7 @@ func (n *NodeManager) UpdateMetadataByUUID(uuid string, metadata NodeMetadata) e
 // Create to insert new osquery node generating new node_key
 func (n *NodeManager) Create(node *OsqueryNode) error {
 	if err := n.DB.Create(&node).Error; err != nil {
-		return fmt.Errorf("Create %w", err)
+		return fmt.Errorf("create %w", err)
 	}
 	return nil
 }
@@ -280,7 +319,7 @@ func (n *NodeManager) Create(node *OsqueryNode) error {
 // NewHistoryEntry to insert new entry for the history of Hostnames
 func (n *NodeManager) NewHistoryEntry(entry interface{}) error {
 	if err := n.DB.Create(&entry).Error; err != nil {
-		return fmt.Errorf("Create newNodeHistoryEntry %w", err)
+		return fmt.Errorf("create newNodeHistoryEntry %w", err)
 	}
 	return nil
 }
@@ -293,7 +332,7 @@ func (n *NodeManager) Archive(uuid, trigger string) error {
 	}
 	archivedNode := nodeArchiveFromNode(node, trigger)
 	if err := n.DB.Create(&archivedNode).Error; err != nil {
-		return fmt.Errorf("Create %w", err)
+		return fmt.Errorf("error in Create %w", err)
 	}
 	return nil
 }
@@ -305,7 +344,7 @@ func (n *NodeManager) UpdateByUUID(data OsqueryNode, uuid string) error {
 		return fmt.Errorf("getNodeByUUID %w", err)
 	}
 	if err := n.DB.Model(&node).Updates(data).Error; err != nil {
-		return fmt.Errorf("Updates %w", err)
+		return fmt.Errorf("error in UpdateByUUID %w", err)
 	}
 	return nil
 }
@@ -318,10 +357,10 @@ func (n *NodeManager) ArchiveDeleteByUUID(uuid string) error {
 	}
 	archivedNode := nodeArchiveFromNode(node, "delete")
 	if err := n.DB.Create(&archivedNode).Error; err != nil {
-		return fmt.Errorf("Create %w", err)
+		return fmt.Errorf("create %w", err)
 	}
 	if err := n.DB.Unscoped().Delete(&node).Error; err != nil {
-		return fmt.Errorf("Delete %w", err)
+		return fmt.Errorf("delete %w", err)
 	}
 	return nil
 }
@@ -358,7 +397,7 @@ func nodeArchiveFromNode(node OsqueryNode, trigger string) ArchiveOsqueryNode {
 // IncreaseBytes to update received bytes per node
 func (n *NodeManager) IncreaseBytes(node OsqueryNode, incBytes int) error {
 	if err := n.DB.Model(&node).Update("bytes_received", node.BytesReceived+incBytes).Error; err != nil {
-		return fmt.Errorf("Update bytes_received - %w", err)
+		return fmt.Errorf("update bytes_received - %w", err)
 	}
 	return nil
 }

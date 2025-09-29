@@ -39,8 +39,6 @@ const (
 	projectName string = "osctrl"
 	// Service name
 	serviceName string = projectName + "-" + config.ServiceAdmin
-	// Service version
-	serviceVersion string = version.OsctrlVersion
 	// Service description
 	serviceDescription string = "Admin service for osctrl"
 	// Application description
@@ -70,7 +68,14 @@ const (
 	// Default interval in seconds to expire queries/carves
 	defaultExpiration int = 900
 	// Default hours to classify nodes as inactive
-	defaultInactive int = -72
+	defaultInactive int = 72
+)
+
+// Build-time metadata (overridden via -ldflags "-X main.buildVersion=... -X main.buildCommit=... -X main.buildDate=...")
+var (
+	buildVersion = version.OsctrlVersion
+	buildCommit  = "unknown"
+	buildDate    = "unknown"
 )
 
 // Global general variables
@@ -135,10 +140,23 @@ func loadConfiguration(file, service string) (config.JSONConfigurationService, e
 	}
 	// Check if values are valid
 	if !validAuth[cfg.Auth] {
-		return cfg, fmt.Errorf("Invalid auth method")
+		return cfg, fmt.Errorf("invalid auth method")
 	}
 	if !validCarver[cfg.Carver] {
-		return cfg, fmt.Errorf("Invalid carver method")
+		return cfg, fmt.Errorf("invalid carver method")
+	}
+	// No errors!
+	return cfg, nil
+}
+
+// Function to load the configuration from a single YAML file
+func loadConfigurationYAML(file string) (config.AdminConfiguration, error) {
+	var cfg config.AdminConfiguration
+	// Load file and read config
+	viper.SetConfigFile(file)
+	viper.SetConfigType("yaml")
+	if err := viper.ReadInConfig(); err != nil {
+		return cfg, err
 	}
 	// No errors!
 	return cfg, nil
@@ -297,8 +315,12 @@ func osctrlAdminService() {
 		handlers.WithSettings(settingsmgr),
 		handlers.WithCache(redis),
 		handlers.WithSessions(sessionsmgr),
-		handlers.WithVersion(serviceVersion),
-		handlers.WithOsqueryVersion(flagParams.OsqueryVersion),
+		handlers.WithMetadata(types.BuildMetadata{
+			Version: buildVersion,
+			Commit:  buildCommit,
+			Date:    buildDate,
+		}),
+		handlers.WithOsqueryValues(flagParams.OsqueryConfigValues),
 		handlers.WithTemplates(flagParams.TemplatesDir),
 		handlers.WithStaticLocation(flagParams.StaticOffline),
 		handlers.WithOsqueryTables(osqueryTables),
@@ -339,17 +361,13 @@ func osctrlAdminService() {
 	adminMux.Handle(
 		"GET /json/environment/{env}/{target}",
 		handlerAuthCheck(http.HandlerFunc(handlersAdmin.JSONEnvironmentHandler), flagParams.ConfigValues.Auth))
-	// Admin: JSON data for platforms
-	adminMux.Handle(
-		"GET /json/platform/{platform}/{target}",
-		handlerAuthCheck(http.HandlerFunc(handlersAdmin.JSONPlatformHandler), flagParams.ConfigValues.Auth))
 	// Admin: JSON data for logs
 	adminMux.Handle(
 		"GET /json/logs/{type}/{env}/{uuid}",
 		handlerAuthCheck(http.HandlerFunc(handlersAdmin.JSONLogsHandler), flagParams.ConfigValues.Auth))
 	// Admin: JSON data for query logs
 	adminMux.Handle(
-		"GET /json/query/{name}",
+		"GET /json/query/{env}/{name}",
 		handlerAuthCheck(http.HandlerFunc(handlersAdmin.JSONQueryLogsHandler), flagParams.ConfigValues.Auth))
 	// Admin: JSON data for sidebar stats
 	adminMux.Handle(
@@ -363,10 +381,6 @@ func osctrlAdminService() {
 	adminMux.Handle(
 		"GET /environment/{env}/{target}",
 		handlerAuthCheck(http.HandlerFunc(handlersAdmin.EnvironmentHandler), flagParams.ConfigValues.Auth))
-	// Admin: table for platforms
-	adminMux.Handle(
-		"GET /platform/{platform}/{target}",
-		handlerAuthCheck(http.HandlerFunc(handlersAdmin.PlatformHandler), flagParams.ConfigValues.Auth))
 	// Admin: root
 	adminMux.Handle(
 		"GET /",
@@ -548,14 +562,16 @@ func osctrlAdminService() {
 			TLSConfig:    cfg,
 			TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 		}
-		log.Info().Msgf("%s v%s - HTTPS listening %s", serviceName, serviceVersion, serviceListener)
+		log.Info().Msgf("%s v%s - HTTPS listening %s", serviceName, buildVersion, serviceListener)
+		log.Info().Msgf("%s - commit=%s - build date=%s", serviceName, buildCommit, buildDate)
 		if err := srv.ListenAndServeTLS(flagParams.TLSCertFile, flagParams.TLSKeyFile); err != nil {
 			log.Fatal().Msgf("ListenAndServeTLS: %v", err)
 		}
 	} else {
-		log.Info().Msgf("%s v%s - HTTP listening %s", serviceName, serviceVersion, serviceListener)
+		log.Info().Msgf("%s v%s - HTTP listening %s", serviceName, buildVersion, serviceListener)
+		log.Info().Msgf("%s - commit=%s - build date=%s", serviceName, buildCommit, buildDate)
 		if err := http.ListenAndServe(serviceListener, adminMux); err != nil {
-			log.Fatal().Msgf("ListenAndServeTLS: %v", err)
+			log.Fatal().Msgf("ListenAndServe: %v", err)
 		}
 	}
 }
@@ -566,41 +582,41 @@ func cliAction(c *cli.Context) error {
 	if flagParams.ConfigFlag {
 		flagParams.ConfigValues, err = loadConfiguration(flagParams.ServiceConfigFile, config.ServiceAdmin)
 		if err != nil {
-			return fmt.Errorf("Failed to load service configuration %s - %w", flagParams.ServiceConfigFile, err)
+			return fmt.Errorf("failed to load service configuration %s - %w", flagParams.ServiceConfigFile, err)
 		}
 	}
 	// Load redis configuration if external JSON config file is used
 	if flagParams.RedisFlag {
 		flagParams.RedisConfigValues, err = cache.LoadConfiguration(flagParams.RedisConfigFile, cache.RedisKey)
 		if err != nil {
-			return fmt.Errorf("Failed to load redis configuration - %w", err)
+			return fmt.Errorf("failed to load redis configuration - %w", err)
 		}
 	}
 	// Load DB configuration if external JSON config file is used
 	if flagParams.DBFlag {
 		flagParams.DBConfigValues, err = backend.LoadConfiguration(flagParams.DBConfigFile, backend.DBKey)
 		if err != nil {
-			return fmt.Errorf("Failed to load DB configuration - %w", err)
+			return fmt.Errorf("failed to load DB configuration - %w", err)
 		}
 	}
 	// Load SAML configuration if this authentication is used in the service config
 	if flagParams.ConfigValues.Auth == config.AuthSAML {
 		samlConfig, err = loadSAML(flagParams.SAMLConfigFile)
 		if err != nil {
-			return fmt.Errorf("Failed to load SAML configuration - %w", err)
+			return fmt.Errorf("failed to load SAML configuration - %w", err)
 		}
 	}
 	// Load JWT configuration if external JWT JSON config file is used
 	if flagParams.JWTFlag {
 		flagParams.JWTConfigValues, err = loadJWTConfiguration(flagParams.JWTConfigFile)
 		if err != nil {
-			return fmt.Errorf("Failed to load JWT configuration - %w", err)
+			return fmt.Errorf("failed to load JWT configuration - %w", err)
 		}
 	}
 	// Load osquery tables JSON file
-	osqueryTables, err = loadOsqueryTables(flagParams.OsqueryTablesFile)
+	osqueryTables, err = loadOsqueryTables(flagParams.OsqueryConfigValues.TablesFile)
 	if err != nil {
-		return fmt.Errorf("Failed to load osquery tables - %w", err)
+		return fmt.Errorf("failed to load osquery tables - %w", err)
 	}
 	// Load carver configuration if external JSON config file is used
 	if flagParams.ConfigValues.Carver == config.CarverS3 {
@@ -610,7 +626,7 @@ func cliAction(c *cli.Context) error {
 			carvers3, err = carves.CreateCarverS3File(flagParams.CarverConfigFile)
 		}
 		if err != nil {
-			return fmt.Errorf("Failed to initiate s3 carver - %w", err)
+			return fmt.Errorf("failed to initiate s3 carver - %w", err)
 		}
 	}
 	return nil
@@ -649,9 +665,19 @@ func main() {
 	app = cli.NewApp()
 	app.Name = serviceName
 	app.Usage = appDescription
-	app.Version = serviceVersion
+	app.Version = buildVersion
 	app.Description = appDescription
 	app.Flags = flags
+	// Customize version output (supports `--version` and `version` command)
+	cli.VersionPrinter = func(c *cli.Context) {
+		fmt.Printf("%s version=%s commit=%s date=%s\n", serviceName, buildVersion, buildCommit, buildDate)
+	}
+	// Add -v alias to the global --version flag
+	cli.VersionFlag = &cli.BoolFlag{
+		Name:    "version",
+		Aliases: []string{"v"},
+		Usage:   "Print version information",
+	}
 	// Define this command for help to exit when help flag is passed
 	app.Commands = []*cli.Command{
 		{
@@ -662,13 +688,19 @@ func main() {
 			},
 		},
 	}
-	app.Action = cliAction
+	// Start service only for default action; version/help won't trigger this
+	app.Action = func(c *cli.Context) error {
+		if err := cliAction(c); err != nil {
+			return err
+		}
+		// Initialize service logger
+		initializeLoggers(flagParams.ConfigValues)
+		// Service starts!
+		osctrlAdminService()
+		return nil
+	}
 	if err := app.Run(os.Args); err != nil {
 		fmt.Printf("app.Run error: %s", err.Error())
 		os.Exit(1)
 	}
-	// Initialize service logger
-	initializeLoggers(flagParams.ConfigValues)
-	// Service starts!
-	osctrlAdminService()
 }

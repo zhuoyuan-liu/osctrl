@@ -1,4 +1,4 @@
-ARG GOLANG_VERSION=${GOLANG_VERSION:-1.24.1}
+ARG GOLANG_VERSION=${GOLANG_VERSION:-1.24.3}
 FROM golang:${GOLANG_VERSION} AS osctrl-api-dev
 
 WORKDIR /usr/src/app
@@ -21,7 +21,6 @@ RUN go mod verify
 ### Copy osctrl-api bin and configs ###
 RUN mkdir -p /opt/osctrl/bin
 RUN mkdir -p /opt/osctrl/config
-RUN go build -o /opt/osctrl/bin/osctrl-api cmd/api/*.go
 
 EXPOSE 9002
 ENTRYPOINT ["air", "-c", "deploy/docker/conf/dev/air/.air-osctrl-api.toml"]

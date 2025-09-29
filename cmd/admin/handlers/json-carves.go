@@ -54,13 +54,6 @@ func (h *HandlersAdmin) JSONCarvesHandler(w http.ResponseWriter, r *http.Request
 	if h.DebugHTTPConfig.Enabled {
 		utils.DebugHTTPDump(h.DebugHTTP, r, h.DebugHTTPConfig.ShowBody)
 	}
-	// Get context data
-	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
-	// Check permissions
-	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.CarveLevel, users.NoEnvironment) {
-		log.Info().Msgf("%s has insuficient permissions", ctx[sessions.CtxUser])
-		return
-	}
 	// Extract environment
 	envVar := r.PathValue("env")
 	if envVar == "" {
@@ -71,6 +64,13 @@ func (h *HandlersAdmin) JSONCarvesHandler(w http.ResponseWriter, r *http.Request
 	env, err := h.Envs.Get(envVar)
 	if err != nil {
 		log.Err(err).Msgf("error getting environment %s", envVar)
+		return
+	}
+	// Get context data
+	ctx := r.Context().Value(sessions.ContextKey(sessions.CtxSession)).(sessions.ContextValue)
+	// Check permissions
+	if !h.Users.CheckPermissions(ctx[sessions.CtxUser], users.CarveLevel, env.UUID) {
+		log.Info().Msgf("%s has insufficient permissions", ctx[sessions.CtxUser])
 		return
 	}
 	// Extract target
@@ -115,16 +115,6 @@ func (h *HandlersAdmin) JSONCarvesHandler(w http.ResponseWriter, r *http.Request
 		data := make(CarveData)
 		data["path"] = q.Path
 		data["name"] = q.Name
-		// Preparing query targets
-		ts, _ := h.Queries.GetTargets(q.Name)
-		_ts := []CarveTarget{}
-		for _, t := range ts {
-			_t := CarveTarget{
-				Type:  t.Type,
-				Value: t.Value,
-			}
-			_ts = append(_ts, _t)
-		}
 		// Preparing JSON
 		_c := CarveJSON{
 			Name:    q.Name,
@@ -136,7 +126,7 @@ func (h *HandlersAdmin) JSONCarvesHandler(w http.ResponseWriter, r *http.Request
 			},
 			Status:   status,
 			Progress: progress,
-			Targets:  _ts,
+			Targets:  parseCarveTarget(q.Target),
 		}
 		cJSON = append(cJSON, _c)
 	}

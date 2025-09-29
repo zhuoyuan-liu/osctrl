@@ -2,6 +2,7 @@
 <html lang="en">
 
   {{ $metadata := .Metadata }}
+  {{ $leftmeta := .LeftMetadata }}
   {{ $serviceConfig := .ServiceConfig }}
 
   {{ template "page-head" . }}
@@ -29,7 +30,7 @@
                 <i class="nav-icon fas fa-tachometer-alt"></i>
                 <strong> Dashboard for node {{ .Hostname }} </strong>
                 {{ range  $i, $t := $template.NodeTags }}
-                  <span style="background-color: {{ $t.Color }};" class="badge"><i class="{{ $t.Icon }}"></i> {{ $t.Name }}</span>
+                  <span style="background-color: {{ $t.Color }};" class="badge"><i class="{{ $t.Icon }}"></i> {{ $t.CustomTag }}:{{ $t.Name }}</span>
                 {{ end }}
               </div>
               <div class="card-body">
@@ -91,7 +92,11 @@
                 <i class="nav-icon fas fa-info-circle"></i>
                 <strong> Details of node {{ .Hostname }} </strong>
                 {{ range  $i, $t := $template.NodeTags }}
-                  <span style="background-color: {{ $t.Color }};" class="badge"><i class="{{ $t.Icon }}"></i> {{ $t.Name }}</span>
+                  <span style="background-color: {{ $t.Color }};" class="badge">
+                    <i class="{{ $t.Icon }}"></i>
+                    <span class="badge-prefix">{{ $t.CustomTag }}:</span>
+                    <span class="badge-main">{{ $t.Name }}</span>
+                  </span>
                 {{ end }}
               </div>
               <div class="card-body">
@@ -102,19 +107,23 @@
 
                     <div class="row float-right">
                       <div class="col-md-12">
-                      {{ if eq $metadata.Level "admin" }}
+                      {{ if $metadata.Admin }}
                         <button type="button" class="btn custom-size-btn btn-outline-danger"
                         data-tooltip="true" data-placement="top" title="Remove" onclick="confirmRemoveNodes(['{{ .UUID }}']);">
                           <i class="far fa-trash-alt"></i>
                         </button>
+                        {{ if $leftmeta.OsqueryValues.Query }}
                         <button type="button" class="btn custom-size-btn btn-outline-dark"
-                        data-tooltip="true" data-placement="top" title="Run Query" onclick="showQueryNodes(['{{ .UUID }}'], '/query/{{ $template.EnvUUID }}/run');">
+                        data-tooltip="true" data-placement="top" title="Run Query" onclick="showQueryNodes(['{{ .UUID }}'], '/query/{{ $leftmeta.EnvUUID }}/run');">
                           <i class="fab fa-searchengin"></i>
                         </button>
+                        {{ end }}
+                        {{ if $leftmeta.OsqueryValues.Carve }}
                         <button type="button" class="btn custom-size-btn btn-outline-info"
-                        data-tooltip="true" data-placement="top" title="Carve File" onclick="showCarveFiles(['{{ .UUID }}'], '/carve/{{ $template.EnvUUID }}/run');">
+                        data-tooltip="true" data-placement="top" title="Carve File" onclick="showCarveFiles(['{{ .UUID }}'], '/carve/{{ $leftmeta.EnvUUID }}/run');">
                           <i class="fas fa-file-upload"></i>
                         </button>
+                        {{ end }}
                         <button type="button" class="btn custom-size-btn btn-outline-warning"
                         data-tooltip="true" data-placement="top" title="Tag Node" onclick="showTagNodes(['{{ .UUID }}']);">
                           <i class="fas fa-tag"></i>
@@ -134,12 +143,14 @@
                       <li class="nav-item">
                         <a class="nav-link" data-toggle="tab" href="#metadata" role="tab" aria-controls="metadata">Metadata</a>
                       </li>
+                      {{ if $leftmeta.OsqueryValues.Logger }}
                       <li class="nav-item">
                         <a class="nav-link" data-toggle="tab" href="#status-logs" role="tab" aria-controls="status-logs">Status Logs</a>
                       </li>
                       <li class="nav-item">
                         <a class="nav-link" data-toggle="tab" href="#result-logs" role="tab" aria-controls="result-logs">Result Logs</a>
                       </li>
+                      {{ end }}
                     </ul>
 
                     <div class="tab-content">
@@ -480,7 +491,7 @@
 
       </main>
 
-      {{ if eq $metadata.Level "admin" }}
+      {{ if $metadata.Admin }}
         {{ template "page-aside-right" . }}
       {{ end }}
 

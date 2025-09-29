@@ -98,11 +98,11 @@ func listNodes(c *cli.Context) error {
 		}
 	case prettyFormat:
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader(header)
+		table.Header(stringSliceToAnySlice(header)...)
 		if len(nds) > 0 {
 			fmt.Printf("Existing %s nodes (%d):\n", target, len(nds))
 			data := nodesToData(nds, nil)
-			table.AppendBulk(data)
+			table.Bulk(data)
 		} else {
 			fmt.Printf("No %s nodes\n", target)
 		}
@@ -151,19 +151,29 @@ func tagNode(c *cli.Context) error {
 		os.Exit(1)
 	}
 	tag := c.String("tag-value")
-	if env == "" {
+	if tag == "" {
 		fmt.Println("❌ tag is required")
 		os.Exit(1)
 	}
 	tagType := c.String("tag-type")
-	tagTypeInt := tags.TagTypeCustom
+	tagCustom := c.String("custom")
+	var tagTypeInt uint
 	switch tagType {
-	case "env":
+	case tags.TagTypeEnvStr:
 		tagTypeInt = tags.TagTypeEnv
-	case "uuid":
+	case tags.TagTypeUUIDStr:
 		tagTypeInt = tags.TagTypeUUID
-	case "localname":
+	case tags.TagTypeLocalnameStr:
 		tagTypeInt = tags.TagTypeLocalname
+	case tags.TagTypeHostnameStr:
+		tagTypeInt = tags.TagTypeHostname
+	case tags.TagTypePlatformStr:
+		tagTypeInt = tags.TagTypePlatform
+	case tags.TagTypeTagStr:
+		tagTypeInt = tags.TagTypeTag
+	default:
+		tagTypeInt = tags.TagTypeCustom
+
 	}
 	if dbFlag {
 		e, err := envs.Get(env)
@@ -174,18 +184,51 @@ func tagNode(c *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("error get uuid - %w", err)
 		}
-		if tagsmgr.Exists(tag) {
-			if err := tagsmgr.TagNode(tag, n, appName, false, tagTypeInt); err != nil {
-				return fmt.Errorf("error tagging - %w", err)
-			}
+		if err := tagsmgr.TagNode(tag, n, appName, false, tagTypeInt, tagCustom); err != nil {
+			return fmt.Errorf("error tagging - %w", err)
 		}
 	} else if apiFlag {
-		if err := osctrlAPI.TagNode(env, uuid, tag); err != nil {
+		if err := osctrlAPI.TagNode(env, uuid, tag, tagTypeInt, tagCustom); err != nil {
 			return fmt.Errorf("error tagging node - %w", err)
 		}
 	}
 	if !silentFlag {
 		fmt.Println("✅ node was tagged successfully")
+	}
+	return nil
+}
+
+func _showNode(node nodes.OsqueryNode) error {
+	header := []string{
+		"Hostname",
+		"UUID",
+		"Platform",
+		"PlatformVersion",
+		"Environment",
+		"Last Seen",
+		"IPAddress",
+		"OsqueryVersion",
+	}
+	// Prepare output
+	switch formatFlag {
+	case jsonFormat:
+		jsonRaw, err := json.Marshal(node)
+		if err != nil {
+			return fmt.Errorf("error marshaling - %w", err)
+		}
+		fmt.Println(string(jsonRaw))
+	case csvFormat:
+		data := nodeToData(node, header)
+		w := csv.NewWriter(os.Stdout)
+		if err := w.WriteAll(data); err != nil {
+			return fmt.Errorf("error writing csv - %w", err)
+		}
+	case prettyFormat:
+		table := tablewriter.NewWriter(os.Stdout)
+		table.Header(stringSliceToAnySlice(header)...)
+		data := nodeToData(node, nil)
+		table.Bulk(data)
+		table.Render()
 	}
 	return nil
 }
@@ -214,36 +257,27 @@ func showNode(c *cli.Context) error {
 			return fmt.Errorf("error getting node - %w", err)
 		}
 	}
-	header := []string{
-		"Hostname",
-		"UUID",
-		"Platform",
-		"PlatformVersion",
-		"Environment",
-		"Last Seen",
-		"IPAddress",
-		"OsqueryVersion",
+	return _showNode(node)
+}
+
+func lookupNode(c *cli.Context) error {
+	// Get values from flags
+	identifier := c.String("identifier")
+	if identifier == "" {
+		fmt.Println("❌ identifier is required")
+		os.Exit(1)
 	}
-	// Prepare output
-	switch formatFlag {
-	case jsonFormat:
-		jsonRaw, err := json.Marshal(node)
+	var node nodes.OsqueryNode
+	if dbFlag {
+		node, err = nodesmgr.GetByIdentifier(identifier)
 		if err != nil {
-			return fmt.Errorf("error marshaling - %w", err)
+			return fmt.Errorf("error getting node - %w", err)
 		}
-		fmt.Println(string(jsonRaw))
-	case csvFormat:
-		data := nodeToData(node, header)
-		w := csv.NewWriter(os.Stdout)
-		if err := w.WriteAll(data); err != nil {
-			return fmt.Errorf("error writing csv - %w", err)
+	} else if apiFlag {
+		node, err = osctrlAPI.LookupNode(identifier)
+		if err != nil {
+			return fmt.Errorf("error getting node - %w", err)
 		}
-	case prettyFormat:
-		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader(header)
-		data := nodeToData(node, nil)
-		table.AppendBulk(data)
-		table.Render()
 	}
-	return nil
+	return _showNode(node)
 }

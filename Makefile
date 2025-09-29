@@ -21,10 +21,12 @@ CLI_CODE = ${CLI_DIR:=/*.go}
 DEST ?= /opt/osctrl
 
 OUTPUT = bin
+DIST = dist
 
 STATIC_ARGS = -ldflags "-linkmode external -extldflags -static"
+BUILD_ARGS = -ldflags "-s -w -X main.buildCommit=$(shell git rev-parse HEAD) -X main.buildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-.PHONY: build static clean tls admin cli api
+.PHONY: build static clean tls admin cli api release release-build release-check release-init clean-dist
 
 # Build code according to caller OS and architecture
 build:
@@ -42,35 +44,39 @@ static:
 
 # Build TLS endpoint
 tls:
-	go build -o $(OUTPUT)/$(TLS_NAME) $(TLS_CODE)
+	go build $(BUILD_ARGS) -o $(OUTPUT)/$(TLS_NAME) $(TLS_CODE)
 
 # Build TLS endpoint statically
 tls-static:
-	go build $(STATIC_ARGS) -o $(OUTPUT)/$(TLS_NAME) -a $(TLS_CODE)
+	go build $(BUILD_ARGS) $(STATIC_ARGS) -o $(OUTPUT)/$(TLS_NAME) -a $(TLS_CODE)
 
 # Build Admin UI
 admin:
-	go build -o $(OUTPUT)/$(ADMIN_NAME) $(ADMIN_CODE)
+	go build $(BUILD_ARGS) -o $(OUTPUT)/$(ADMIN_NAME) $(ADMIN_CODE)
 
 # Build Admin UI statically
 admin-static:
-	go build $(STATIC_ARGS) -o $(OUTPUT)/$(ADMIN_NAME) -a $(ADMIN_CODE)
+	go build $(BUILD_ARGS) $(STATIC_ARGS) -o $(OUTPUT)/$(ADMIN_NAME) -a $(ADMIN_CODE)
 
 # Build API
 api:
-	go build -o $(OUTPUT)/$(API_NAME) $(API_CODE)
+	go build $(BUILD_ARGS) -o $(OUTPUT)/$(API_NAME) $(API_CODE)
 
 # Build API statically
 api-static:
-	go build $(STATIC_ARGS) -o $(OUTPUT)/$(API_NAME) -a $(API_CODE)
+	go build $(BUILD_ARGS) $(STATIC_ARGS) -o $(OUTPUT)/$(API_NAME) -a $(API_CODE)
 
 # Build the CLI
 cli:
-	go build -o $(OUTPUT)/$(CLI_NAME) $(CLI_CODE)
+	go build $(BUILD_ARGS) -o $(OUTPUT)/$(CLI_NAME) $(CLI_CODE)
 
 # Build the CLI statically
 cli-static:
-	go build $(STATIC_ARGS) -o $(OUTPUT)/$(CLI_NAME) -a $(CLI_CODE)
+	go build $(BUILD_ARGS) $(STATIC_ARGS) -o $(OUTPUT)/$(CLI_NAME) -a $(CLI_CODE)
+
+# Clean the dist directory
+clean-dist:
+	rm -rf $(DIST)
 
 # Delete all compiled binaries
 clean:
@@ -78,6 +84,7 @@ clean:
 	rm -rf $(OUTPUT)/$(ADMIN_NAME)
 	rm -rf $(OUTPUT)/$(API_NAME)
 	rm -rf $(OUTPUT)/$(CLI_NAME)
+	make clean-dist
 
 # Dekete all dependencies go.sum files
 clean_go:
@@ -88,6 +95,13 @@ tidy:
 	make clean
 	make clean_go
 	go mod tidy
+
+# Keep dependencies up to date
+deps-update:
+ifeq (,$(wildcard go.mod))
+	$(error Missing go.mod file)
+endif
+	go get -u ./...
 
 # Install everything
 # optional DEST=destination_path
@@ -156,9 +170,15 @@ docker_dev_logs_api:
 docker_dev_logs_nginx:
 	docker logs -f osctrl-nginx-dev
 
-# Display docker logs for osquery client
-docker_dev_logs_osquery:
-	docker logs -f osctrl-osquery-dev
+# Display docker logs for osquery clients
+docker_dev_logs_osquery-1:
+	docker logs -f osctrl-osquery-1-dev
+
+docker_dev_logs_osquery-2:
+	docker logs -f osctrl-osquery-2-dev
+
+docker_dev_logs_osquery-3:
+	docker logs -f osctrl-osquery-3-dev
 
 # Display docker logs for postgresql server
 docker_dev_logs_postgresql:
@@ -221,9 +241,10 @@ up-backend:
 docker_dev_down:
 	docker-compose -f docker-compose-dev.yml down
 
-# Deletes all osctrl docker images
+# Deletes all osctrl docker images and volumes
 docker_dev_clean:
 	docker images | grep osctrl | awk '{print $$3}' | xargs -rI {} docker rmi -f {}
+	docker volume ls | grep osctrl | awk '{print $$2}' | xargs -rI {} docker volume rm {}
 
 # Rebuild only the TLS server
 docker_dev_rebuild_tls:
@@ -232,6 +253,10 @@ docker_dev_rebuild_tls:
 # Rebuild only the Admin server
 docker_dev_rebuild_admin:
 	docker-compose -f docker-compose-dev.yml up --force-recreate --no-deps -d --build $(ADMIN_NAME)
+
+# Rebuild only the CLI
+docker_dev_rebuild_cli:
+	docker-compose -f docker-compose-dev.yml up --force-recreate --no-deps -d --build $(CLI_NAME)
 
 # Rebuild only the API server
 docker_dev_rebuild_api:
@@ -255,3 +280,32 @@ test:
 test_cover:
 	cd utils && go test -cover .
 	cd cmd/tls/handlers && go test -cover .
+
+# Build snapshot binaries with GoReleaser
+release-build:
+	make clean-dist
+	./tools/gorelease.sh build
+
+# Check GoReleaser configuration
+release-check:
+	./tools/gorelease.sh check
+
+# Initialize GoReleaser configuration
+release-init:
+	./tools/gorelease.sh init
+
+# Create a release (requires tag)
+release:
+	make clean-dist
+	./tools/gorelease.sh release
+
+# Build and test release locally
+release-test:
+	make release-build
+	@echo "Testing built binaries..."
+	@for binary in $(DIST)/osctrl-*; do \
+		if [ -f "$$binary" ] && [ -x "$$binary" ]; then \
+			echo "Testing $$binary"; \
+			$$binary --version || $$binary version || echo "No version flag available"; \
+		fi; \
+	done

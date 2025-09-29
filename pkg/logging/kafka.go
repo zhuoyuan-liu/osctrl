@@ -17,10 +17,14 @@ import (
 	"github.com/twmb/tlscfg"
 )
 
+type KafkaProducer interface {
+	ProduceSync(ctx context.Context, records ...*kgo.Record) kgo.ProduceResults
+}
+
 type LoggerKafka struct {
 	config   config.KafkaConfiguration
 	Enabled  bool
-	producer *kgo.Client
+	producer KafkaProducer
 }
 
 func CreateLoggerKafka(config config.KafkaConfiguration) (*LoggerKafka, error) {

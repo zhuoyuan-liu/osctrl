@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -37,7 +36,7 @@ const (
 	CONFIG_INTERVAL     = 45
 	QUERY_READ_INTERVAL = 30
 
-	NODES_JSON = "nodes.json"
+	STATE_JSON = "state.json"
 	OSQUERYI   = "osqueryi"
 )
 
@@ -86,10 +85,17 @@ type OperationStats struct {
 	queryWrite LatencyStats
 }
 
+// URLStats tracks statistics per URL endpoint
+type URLStats struct {
+	mu    sync.RWMutex
+	stats map[string]*LatencyStats
+}
+
 // GlobalStats holds global statistics
 type GlobalStats struct {
 	mu          sync.RWMutex
 	operations  OperationStats
+	urls        URLStats
 	startTime   time.Time
 	totalNodes  int
 	activeNodes int
@@ -112,6 +118,9 @@ var (
 	// Global statistics instance
 	globalStats = &GlobalStats{
 		startTime: time.Now(),
+		urls: URLStats{
+			stats: make(map[string]*LatencyStats),
+		},
 	}
 )
 
@@ -251,12 +260,11 @@ type FakeNewsConfig struct {
 	ResultInterval  int
 	ConfigInterval  int
 	QueryInterval   int
-	ReadFile        string
-	WriteFile       string
 	Verbose         bool
 	Insecure        bool
 	OutputMode      OutputMode
 	SummaryInterval int
+	StateFile       string
 }
 
 // HTTPClient wraps http.Client with custom configuration
@@ -324,6 +332,17 @@ func (c *HTTPClient) Post(url string, data interface{}, headers map[string]strin
 		if c.debug {
 			prettyJSON, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Printf("%s\n", string(prettyJSON))
+		}
+	} else {
+		// Print error and output when not 200
+		fmt.Printf("HTTP request to %s returned status %d\n", url, resp.StatusCode)
+		fmt.Printf("Response body: %s\n", string(body))
+		// Write error to external file
+		f, ferr := os.OpenFile("http_errors.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if ferr == nil {
+			logLine := fmt.Sprintf("%s | %s | HTTP %d\n%s\n\n", time.Now().Format(time.RFC3339), url, resp.StatusCode, string(body))
+			_, _ = f.WriteString(logLine)
+			f.Close()
 		}
 	}
 
@@ -661,7 +680,7 @@ func enrollNode(client *HTTPClient, node Node, secret string, enrollURL string, 
 	requestTime := time.Since(start)
 
 	success := err == nil && code == 200
-	logOperation(EnrollOp, node.Name, requestTime, success, config)
+	logOperationWithURL(EnrollOp, node.Name, enrollURL, requestTime, success, config)
 
 	if err != nil {
 		if config.OutputMode == VerboseMode {
@@ -702,7 +721,7 @@ func logStatus(ctx context.Context, client *HTTPClient, node *Node, urls map[str
 			requestTime := time.Since(start)
 
 			success := err == nil && code == 200
-			logOperation(StatusOp, node.Name, requestTime, success, config)
+			logOperationWithURL(StatusOp, node.Name, urls["log"], requestTime, success, config)
 
 			if err != nil {
 				if config.OutputMode == VerboseMode {
@@ -745,7 +764,7 @@ func logResult(ctx context.Context, client *HTTPClient, node *Node, urls map[str
 			requestTime := time.Since(start)
 
 			success := err == nil && code == 200
-			logOperation(ResultOp, node.Name, requestTime, success, config)
+			logOperationWithURL(ResultOp, node.Name, urls["log"], requestTime, success, config)
 
 			if err != nil {
 				if config.OutputMode == VerboseMode {
@@ -788,7 +807,7 @@ func configRequest(ctx context.Context, client *HTTPClient, node *Node, urls map
 			requestTime := time.Since(start)
 
 			success := err == nil && code == 200
-			logOperation(ConfigOp, node.Name, requestTime, success, config)
+			logOperationWithURL(ConfigOp, node.Name, urls["config"], requestTime, success, config)
 
 			if err != nil {
 				if config.OutputMode == VerboseMode {
@@ -831,7 +850,7 @@ func queryRead(ctx context.Context, client *HTTPClient, node *Node, urls map[str
 			requestTime := time.Since(start)
 
 			success := err == nil && code == 200
-			logOperation(QueryReadOp, node.Name, requestTime, success, config)
+			logOperationWithURL(QueryReadOp, node.Name, urls["query"], requestTime, success, config)
 
 			if err != nil {
 				if config.OutputMode == VerboseMode {
@@ -889,7 +908,7 @@ func queryWrite(client *HTTPClient, node *Node, queryName string, query interfac
 	requestTime := time.Since(start)
 
 	success := err == nil && code == 200
-	logOperation(QueryWriteOp, node.Name, requestTime, success, config)
+	logOperationWithURL(QueryWriteOp, node.Name, writeURL, requestTime, success, config)
 
 	if err != nil {
 		if config.OutputMode == VerboseMode {
@@ -1043,6 +1062,33 @@ func (gs *GlobalStats) RecordOperation(opType OperationType, latency time.Durati
 	gs.mu.Unlock()
 }
 
+// RecordURLOperation records an operation for a specific URL
+func (gs *GlobalStats) RecordURLOperation(url string, latency time.Duration, success bool) {
+	gs.mu.Lock()
+	gs.urls.mu.Lock()
+
+	if gs.urls.stats[url] == nil {
+		gs.urls.stats[url] = &LatencyStats{}
+	}
+	gs.urls.stats[url].AddLatency(latency, success)
+	gs.lastUpdate = time.Now()
+
+	gs.urls.mu.Unlock()
+	gs.mu.Unlock()
+}
+
+// GetURLStats returns statistics for all URLs
+func (gs *GlobalStats) GetURLStats() map[string]*LatencyStats {
+	gs.urls.mu.RLock()
+	defer gs.urls.mu.RUnlock()
+
+	result := make(map[string]*LatencyStats)
+	for url, stats := range gs.urls.stats {
+		result[url] = stats
+	}
+	return result
+}
+
 // GetUptime returns the uptime since start
 func (gs *GlobalStats) GetUptime() time.Duration {
 	gs.mu.RLock()
@@ -1089,6 +1135,26 @@ func printSummary() {
 				op.name, count, successRate, min.Milliseconds(), avg.Milliseconds(), max.Milliseconds(), p95.Milliseconds(), p99.Milliseconds())
 		}
 	}
+
+	// Print URL statistics
+	fmt.Printf("%s\n", strings.Repeat("=", 80))
+	fmt.Printf("URL STATISTICS - ABSOLUTE NUMBERS\n")
+	fmt.Printf("%s\n", strings.Repeat("=", 80))
+
+	urlStats := globalStats.GetURLStats()
+	if len(urlStats) > 0 {
+		fmt.Printf("%-50s | %8s | %8s | %8s | %8s\n", "URL", "Total", "Success", "Failed", "Success%")
+		fmt.Printf("%s\n", strings.Repeat("-", 80))
+
+		for url, stats := range urlStats {
+			_, _, _, _, _, count, success, fail := stats.GetStats()
+			if count > 0 {
+				successRate := float64(success) / float64(count) * 100
+				fmt.Printf("%-50s | %8d | %8d | %8d | %7.1f%%\n",
+					url, count, success, fail, successRate)
+			}
+		}
+	}
 	fmt.Printf("%s\n\n", strings.Repeat("=", 80))
 }
 
@@ -1131,6 +1197,27 @@ func printDashboard() {
 			fmt.Printf("%-12s | %8d | %7s | %8s | %8s | %8s | %8s | %8s\n",
 				op.name, 0, "-", "-", "-", "-", "-", "-")
 		}
+	}
+	fmt.Printf("%s\n", strings.Repeat("-", 100))
+
+	// Print URL statistics section
+	fmt.Printf("\nURL STATISTICS - ABSOLUTE NUMBERS\n")
+	fmt.Printf("%s\n", strings.Repeat("-", 100))
+	fmt.Printf("%-50s | %8s | %8s | %8s | %8s\n", "URL", "Total", "Success", "Failed", "Success%")
+	fmt.Printf("%s\n", strings.Repeat("-", 100))
+
+	urlStats := globalStats.GetURLStats()
+	if len(urlStats) > 0 {
+		for url, stats := range urlStats {
+			_, _, _, _, _, count, success, fail := stats.GetStats()
+			if count > 0 {
+				successRate := float64(success) / float64(count) * 100
+				fmt.Printf("%-50s | %8d | %8d | %8d | %7.1f%%\n",
+					url, count, success, fail, successRate)
+			}
+		}
+	} else {
+		fmt.Printf("%-50s | %8s | %8s | %8s | %8s\n", "No data yet", "-", "-", "-", "-")
 	}
 	fmt.Printf("%s\n", strings.Repeat("-", 100))
 }
@@ -1178,14 +1265,35 @@ func printJSONStats() {
 
 	stats["operations"] = operations
 
+	// Add URL statistics
+	urlStats := globalStats.GetURLStats()
+	urls := make(map[string]interface{})
+	for url, urlStat := range urlStats {
+		_, _, _, _, _, count, success, fail := urlStat.GetStats()
+
+		urlData := make(map[string]interface{})
+		urlData["count"] = count
+		urlData["success_count"] = success
+		urlData["fail_count"] = fail
+		if count > 0 {
+			urlData["success_rate"] = float64(success) / float64(count) * 100
+		} else {
+			urlData["success_rate"] = 0.0
+		}
+
+		urls[url] = urlData
+	}
+	stats["urls"] = urls
+
 	jsonData, _ := json.MarshalIndent(stats, "", "  ")
 	fmt.Printf("%s\n", string(jsonData))
 }
 
-// logOperation logs an operation based on the output mode
-func logOperation(opType OperationType, nodeName string, latency time.Duration, success bool, config FakeNewsConfig) {
-	// Record the operation in statistics
+// logOperationWithURL logs an operation with URL tracking
+func logOperationWithURL(opType OperationType, nodeName string, url string, latency time.Duration, success bool, config FakeNewsConfig) {
+	// Record the operation in both operation and URL statistics
 	globalStats.RecordOperation(opType, latency, success)
+	globalStats.RecordURLOperation(url, latency, success)
 
 	// Output based on mode
 	switch config.OutputMode {
@@ -1209,7 +1317,7 @@ func logOperation(opType OperationType, nodeName string, latency time.Duration, 
 		if !success {
 			status = "✗"
 		}
-		fmt.Printf("⏰ %d ms %s %s from %s\n", latency.Milliseconds(), status, opNames[opType], nodeName)
+		fmt.Printf("⏰ %d ms %s %s from %s to %s\n", latency.Milliseconds(), status, opNames[opType], nodeName, url)
 	case DashboardMode:
 		// Real-time dashboard (handled by dashboard goroutine)
 		return
@@ -1283,13 +1391,10 @@ func main() {
 	flag.IntVar(&config.ConfigInterval, "c", CONFIG_INTERVAL, "Interval in seconds for config requests to osctrl")
 	flag.IntVar(&config.QueryInterval, "query", QUERY_READ_INTERVAL, "Interval in seconds for query requests to osctrl")
 	flag.IntVar(&config.QueryInterval, "q", QUERY_READ_INTERVAL, "Interval in seconds for query requests to osctrl")
-	flag.StringVar(&config.ReadFile, "read", "", "JSON file to read nodes from")
-	flag.StringVar(&config.ReadFile, "r", "", "JSON file to read nodes from")
-	flag.StringVar(&config.WriteFile, "write", "", "JSON file to write nodes to")
-	flag.StringVar(&config.WriteFile, "w", "", "JSON file to write nodes to")
 	flag.BoolVar(&config.Insecure, "insecure", false, "Skip TLS certificate verification")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose output")
 	flag.BoolVar(&config.Verbose, "v", false, "Enable verbose output")
+	flag.StringVar(&config.StateFile, "state", STATE_JSON, "JSON file to persist and resume node state")
 
 	// Output mode flags
 	var outputMode string
@@ -1360,15 +1465,16 @@ func main() {
 	var nodes []Node
 	var err error
 
-	if config.ReadFile != "" {
-		fmt.Printf("Reading from JSON %s\n", config.ReadFile)
-		nodes, err = loadNodesFromFile(config.ReadFile)
-		if err != nil {
-			log.Fatalf("Failed to load nodes from file: %v", err)
+	// Try to load state first if specified
+	if config.StateFile != "" {
+		fmt.Printf("Attempting to resume state from %s\n", config.StateFile)
+		nodes, err = loadNodesFromFile(config.StateFile)
+		if err == nil && len(nodes) > 0 {
+			fmt.Printf("Resumed %d nodes from state\n", len(nodes))
+		} else {
+			fmt.Printf("No valid state found, generating %d nodes\n", config.Nodes)
+			nodes = generateRandomNodes(config.Nodes, r)
 		}
-	} else {
-		fmt.Printf("Generating %d nodes\n", config.Nodes)
-		nodes = generateRandomNodes(config.Nodes, r)
 	}
 
 	if config.Verbose {
@@ -1379,23 +1485,35 @@ func main() {
 	// Create HTTP client
 	client := NewHTTPClient(config.Verbose, config.Insecure)
 
-	// Enroll nodes
+	// Enroll nodes if they have no key
 	for i := range nodes {
-		fmt.Printf("Enrolling %s as %s\n", nodes[i].Target, nodes[i].Name)
-		nodes[i].Key = enrollNode(client, nodes[i], config.Secret, urls["enroll"], config)
-	}
-
-	// Save nodes to file if requested
-	if config.WriteFile != "" {
-		fmt.Printf("Writing to JSON %s\n", config.WriteFile)
-		if err := saveNodesToFile(nodes, config.WriteFile); err != nil {
-			log.Fatalf("Failed to save nodes to file: %v", err)
+		if nodes[i].Key == "" {
+			fmt.Printf("Enrolling %s as %s\n", nodes[i].Target, nodes[i].Name)
+			nodes[i].Key = enrollNode(client, nodes[i], config.Secret, urls["enroll"], config)
 		}
 	}
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Periodically save state if state file is specified
+	if config.StateFile != "" {
+		go func(ctx context.Context) {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := saveNodesToFile(nodes, config.StateFile); err != nil {
+						fmt.Printf("Failed to save state: %v\n", err)
+					}
+				}
+			}
+		}(ctx)
+	}
 
 	// Create mutex for thread-safe node updates
 	var mutex sync.Mutex

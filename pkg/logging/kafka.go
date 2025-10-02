@@ -2,11 +2,13 @@ package logging
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/jmpsec/osctrl/pkg/config"
 	"github.com/jmpsec/osctrl/pkg/settings"
+	"github.com/jmpsec/osctrl/pkg/types"
 
 	"github.com/rs/zerolog/log"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -15,10 +17,14 @@ import (
 	"github.com/twmb/tlscfg"
 )
 
+type KafkaProducer interface {
+	ProduceSync(ctx context.Context, records ...*kgo.Record) kgo.ProduceResults
+}
+
 type LoggerKafka struct {
 	config   config.KafkaConfiguration
 	Enabled  bool
-	producer *kgo.Client
+	producer KafkaProducer
 }
 
 func CreateLoggerKafka(config config.KafkaConfiguration) (*LoggerKafka, error) {
@@ -85,6 +91,25 @@ func (l *LoggerKafka) Settings(mgr *settings.Settings) {
 	log.Warn().Msg("No kafka logging settings")
 }
 
+func (l *LoggerKafka) parseLogs(logType string, data []byte) ([]any, error) {
+	// QueryLogs = distributed query results are delivered from OSQuery as a single JSON object.
+	if logType == types.QueryLog {
+		var result any
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, fmt.Errorf("error parsing data %s: %w", string(data), err)
+		}
+		return []any{result}, nil
+	}
+
+	// others (Result + Status) are delivered in an array
+	var logs []any
+	if err := json.Unmarshal(data, &logs); err != nil {
+		return nil, fmt.Errorf("error parsing log %s: %w", string(data), err)
+	}
+
+	return logs, nil
+}
+
 func (l *LoggerKafka) Send(logType string, data []byte, environment, uuid string, debug bool) {
 	if debug {
 		log.Info().Msgf(
@@ -92,19 +117,38 @@ func (l *LoggerKafka) Send(logType string, data []byte, environment, uuid string
 			len(data), l.config.Topic, environment, uuid)
 	}
 
+	logs, err := l.parseLogs(logType, data)
+	if err != nil {
+		log.Err(err).Msg("failed to parse logs")
+		return
+	}
+
 	ctx := context.Background()
 	key := []byte(uuid) // uuid is the unique id of the os-query agent host that sent this data
-	rec := kgo.Record{Topic: l.config.Topic, Key: key, Value: data}
-	l.producer.Produce(ctx, &rec, func(r *kgo.Record, err error) {
+
+	// Prepare all kafka records, so they can be sent in one batch
+	var records []*kgo.Record
+	for _, logEntry := range logs {
+		jsonEvent, err := json.Marshal(logEntry)
 		if err != nil {
-			log.Info().Msgf(
-				"failed to produce message to kafka topic '%s'. details: %s",
-				l.config.Topic, err)
+			log.Err(err).Msg("Error parsing data")
+			continue
 		}
-		if debug {
-			log.Info().Msgf(
-				"message with key '%s' was sent to topic '%s' successfully\n%s",
-				key, l.config.Topic, string(data))
-		}
-	})
+
+		r := &kgo.Record{Topic: l.config.Topic, Key: key, Value: jsonEvent}
+		records = append(records, r)
+	}
+
+	if len(records) == 0 {
+		log.Warn().Msgf("unexpected record count of 0 from %s:%s", uuid, environment)
+		return
+	}
+
+	results := l.producer.ProduceSync(ctx, records...)
+	if err := results.FirstErr(); err != nil {
+		log.Err(err).Msgf("failed to produce messages to kafka topic '%s'", l.config.Topic)
+	} else if debug {
+		log.Info().Msgf("successfully sent %d %s messages to kafka topic '%s' from %s:%s",
+			len(records), logType, l.config.Topic, uuid, environment)
+	}
 }

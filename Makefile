@@ -272,9 +272,7 @@ lint:
 
 # Run all tests
 test:
-	go clean -testcache ./...
-	go test ./utils -v
-	go test ./cmd/tls/handlers -v
+	go test ./...
 
 # Check test coverage
 test_cover:

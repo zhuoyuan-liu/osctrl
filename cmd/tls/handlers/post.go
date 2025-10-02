@@ -37,10 +37,12 @@ func (h *HandlersTLS) EnrollHandler(w http.ResponseWriter, r *http.Request) {
 	// Get environment
 	env, err := h.EnvCache.GetByUUID(context.TODO(), envVar)
 	if err != nil {
-		log.Err(err).Msg("error getting environment")
 		utils.HTTPResponse(w, "", http.StatusInternalServerError, []byte(""))
 		return
 	}
+
+	log.Info().Str("env_name", env.Name).Str("env_uuid", string(env.UUID)).Msg("Enrollment attempt received")
+
 	// Check if environment accept enrolls
 	if !env.AcceptEnrolls {
 		utils.HTTPResponse(w, "", http.StatusServiceUnavailable, []byte(""))
@@ -54,15 +56,22 @@ func (h *HandlersTLS) EnrollHandler(w http.ResponseWriter, r *http.Request) {
 	var t types.EnrollRequest
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Err(err).Msg("error reading POST body")
+		log.Err(err).Str("env_name", env.Name).Msg("error reading POST body")
 		utils.HTTPResponse(w, "", http.StatusInternalServerError, []byte(""))
 		return
 	}
 	if err := json.Unmarshal(body, &t); err != nil {
-		log.Err(err).Msg("error parsing POST body")
+		log.Err(err).Str("env_name", env.Name).Msg("error parsing POST body")
 		utils.HTTPResponse(w, "", http.StatusInternalServerError, []byte(""))
 		return
 	}
+
+	log.Info().
+		Str("env_name", env.Name).
+		Str("host_identifier", t.HostIdentifier).
+		Str("platform", t.PlatformType).
+		Msg("Processing enrollment request")
+
 	// Check if received secret is valid
 	var nodeKey string
 	var newNode nodes.OsqueryNode
@@ -71,37 +80,95 @@ func (h *HandlersTLS) EnrollHandler(w http.ResponseWriter, r *http.Request) {
 		// Generate node_key using UUID as entropy
 		nodeKey = generateNodeKey(t.HostIdentifier, time.Now())
 		newNode = nodeFromEnroll(t, env, utils.GetIP(r), nodeKey, len(body))
+
 		// Check if UUID exists already, if so archive node and enroll new node
-		if h.Nodes.CheckByUUIDEnv(t.HostIdentifier, env.Name) {
+		existingNode := h.Nodes.CheckByUUIDEnv(t.HostIdentifier, env.Name)
+		if existingNode {
+			log.Info().
+				Str("env_name", env.Name).
+				Str("host_identifier", t.HostIdentifier).
+				Msg("Node already exists in environment - processing re-enrollment")
+
 			if err := h.Nodes.Archive(t.HostIdentifier, "exists"); err != nil {
-				log.Err(err).Msg("error archiving node")
+				log.Err(err).
+					Str("env_name", env.Name).
+					Str("host_identifier", t.HostIdentifier).
+					Msg("error archiving existing node during re-enrollment")
+			} else {
+				log.Info().
+					Str("env_name", env.Name).
+					Str("host_identifier", t.HostIdentifier).
+					Msg("Successfully archived existing node")
 			}
+
 			// Update existing with new enroll data
 			if err := h.Nodes.UpdateByUUID(newNode, t.HostIdentifier); err != nil {
-				log.Err(err).Msg("error updating existing node")
+				log.Err(err).
+					Str("env_name", env.Name).
+					Str("host_identifier", t.HostIdentifier).
+					Msg("error updating existing node during re-enrollment")
 			} else {
 				nodeInvalid = false
+				log.Info().
+					Str("env_name", env.Name).
+					Str("host_identifier", t.HostIdentifier).
+					Str("node_key", nodeKey).
+					Msg("Successfully updated existing node with new enrollment data")
 			}
-		} else { // New node, persist it
+		} else {
+			// New node, persist it
+			log.Info().
+				Str("env_name", env.Name).
+				Str("host_identifier", t.HostIdentifier).
+				Msg("New node enrollment - creating node record")
+
 			if err := h.Nodes.Create(&newNode); err != nil {
-				log.Err(err).Msg("error creating node")
+				log.Err(err).
+					Str("env_name", env.Name).
+					Str("host_identifier", t.HostIdentifier).
+					Msg("error creating new node")
 			} else {
 				nodeInvalid = false
+				log.Info().
+					Str("env_name", env.Name).
+					Str("host_identifier", t.HostIdentifier).
+					Str("node_key", nodeKey).
+					Msg("Successfully created new node")
+
 				if err := h.Tags.AutoTagNode(env.Name, newNode, "osctrl-tls"); err != nil {
-					log.Err(err).Msg("error tagging node")
+					log.Err(err).
+						Str("env_name", env.Name).
+						Str("host_identifier", t.HostIdentifier).
+						Msg("error tagging new node")
+				} else {
+					log.Info().
+						Str("env_name", env.Name).
+						Str("host_identifier", t.HostIdentifier).
+						Msg("Successfully auto-tagged new node")
 				}
 			}
 		}
 	} else {
-		log.Err(err).Msg("invalid enrolling secret")
+		log.Err(err).
+			Str("env_name", env.Name).
+			Str("host_identifier", t.HostIdentifier).
+			Msg("Invalid enrolling secret provided")
 		utils.HTTPResponse(w, "", http.StatusForbidden, []byte(""))
 		return
 	}
+
 	response := types.EnrollResponse{NodeKey: nodeKey, NodeInvalid: nodeInvalid}
 	// Debug HTTP
 	if (*h.EnvsMap)[env.Name].DebugHTTP {
 		log.Debug().Msgf("Response: %+v", response)
 	}
+
+	log.Info().
+		Str("env_name", env.Name).
+		Str("host_identifier", t.HostIdentifier).
+		Bool("node_invalid", nodeInvalid).
+		Msg("Enrollment process completed")
+
 	// Serialize and send response
 	utils.HTTPResponse(w, utils.JSONApplicationUTF8, http.StatusOK, response)
 }
